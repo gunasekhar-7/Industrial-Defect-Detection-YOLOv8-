@@ -184,3 +184,4 @@ docker-compose up --build
 ```
 - API Swagger Docs: `http://localhost:8000/docs`
 - Streamlit UI: `http://localhost:8501`
+"# Industrial-Defect-Detection-YOLOv8-" 
