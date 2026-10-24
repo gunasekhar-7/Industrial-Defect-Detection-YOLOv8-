@@ -1,0 +1,15 @@
+# Industrial Defect Detection Dataset Configuration (YOLO format)
+path: data/processed
+train: images/train
+val: images/val
+test: images/test
+
+# Classes representing typical surface defects
+# Based on NEU-DET / Industrial metal surface defect standards
+names:
+  0: crazing
+  1: inclusion
+  2: patches
+  3: pitted_surface
+  4: rolled_in_scale
+  5: scratches

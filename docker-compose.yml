@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    container_name: defect-detection-api
+    command: uvicorn src.api.app:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_PATH=models/industrial_yolov8n.onnx
+      - MAX_IMAGE_SIZE_MB=15
+    restart: unless-stopped
+
+  dashboard:
+    build: .
+    container_name: defect-detection-dashboard
+    command: streamlit run src/ui/dashboard.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
+    restart: unless-stopped

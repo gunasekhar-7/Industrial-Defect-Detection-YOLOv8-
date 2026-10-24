@@ -1,0 +1,22 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pytest & caches
+.pytest_cache/
+.hypothesis/
+.coverage
+
+# Datasets and training artifacts
+data/
+runs/
+*.pt
+*.onnx
+mlflow.db
+.freebuff/
+
+# Environments
+venv/
+.venv/
+env/

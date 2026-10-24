@@ -1,0 +1,1 @@
+"""Streamlit industrial inspection dashboard."""
