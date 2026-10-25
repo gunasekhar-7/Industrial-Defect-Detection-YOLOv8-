@@ -8,15 +8,20 @@ __pycache__/
 .hypothesis/
 .coverage
 
-# Datasets and training artifacts
-data/
-runs/
+# Datasets and training artifacts (anchored: src/data/ package IS tracked)
+/data/
+/runs/
+/mlruns/
 *.pt
 *.onnx
+# Shipped model: docker build + fresh clones need this file
+!models/industrial_yolov8n.onnx
 mlflow.db
 .freebuff/
+.superpowers/
 
 # Environments
 venv/
 .venv/
 env/
+coverage.xml

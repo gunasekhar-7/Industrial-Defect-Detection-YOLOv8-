@@ -1,12 +1,16 @@
 """FastAPI application for Industrial Defect Detection."""
 
-import io
+import logging
+import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Any, Dict, List
+
 import cv2
 import numpy as np
-from fastapi import FastAPI, File, Request, Response, UploadFile, status
+from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -21,9 +25,9 @@ from src.api.schemas import (
 )
 from src.api.security import sanitize_and_read_image
 from src.models.benchmark import ONNXDefectDetector
+from src.vision.annotate import draw_detections
 
-
-from contextlib import asynccontextmanager
+logger = logging.getLogger("src.api")
 
 # Rate limiter configuration
 limiter = Limiter(key_func=get_remote_address)
@@ -42,78 +46,96 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS configuration
+
+def _rate_limit_handler(request: Request, exc: Exception) -> Response:
+    """Registry adapter: Starlette types exception handlers as
+    (Request, Exception) while slowapi narrows the second parameter
+    (a contravariance mismatch in its annotations). The registry only
+    dispatches RateLimitExceeded to this key, so delegate directly."""
+    assert isinstance(exc, RateLimitExceeded)
+    return _rate_limit_exceeded_handler(request, exc)
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
+
+# CORS configuration: explicit origins from settings, never a wildcard.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["content-type"],
 )
 
 # Global model holder
 model_engine: Any = None
 model_type: str = "none"
-
-# Defect class color palette (BGR)
-CLASS_COLORS = {
-    0: (0, 0, 255),     # crazing (red)
-    1: (0, 165, 255),   # inclusion (orange)
-    2: (0, 255, 255),   # patches (yellow)
-    3: (255, 0, 255),   # pitted_surface (magenta)
-    4: (255, 255, 0),   # rolled_in_scale (cyan)
-    5: (0, 255, 0),     # scratches (green)
-}
+_model_lock = threading.Lock()
 
 
 def load_model() -> None:
-    """Initializes the detection model, favoring ONNX Runtime with PyTorch fallback."""
+    """Initializes the detection model exactly once, thread-safely.
+
+    Favors ONNX Runtime with PyTorch fallback. A failed load leaves the
+    engine unset so a later retry (e.g. model exported after startup)
+    can still succeed.
+    """
     global model_engine, model_type
 
-    onnx_path = Path(settings.MODEL_PATH)
-    if onnx_path.exists():
-        try:
-            model_engine = ONNXDefectDetector(
-                onnx_path,
-                confidence_threshold=settings.CONFIDENCE_THRESHOLD,
-                iou_threshold=settings.IOU_THRESHOLD,
-            )
-            model_type = "onnx_runtime"
-            print(f"Loaded ONNX model from: {onnx_path}")
-            return
-        except Exception as e:
-            print(f"Failed to load ONNX model: {e}")
+    with _model_lock:
+        if model_engine is not None:
+            return  # already loaded — concurrent callers no-op
 
-    pt_path = Path(settings.FALLBACK_PYTORCH_PATH)
-    if pt_path.exists():
-        try:
-            from ultralytics import YOLO
+        onnx_path = Path(settings.MODEL_PATH)
+        if onnx_path.exists():
+            try:
+                model_engine = ONNXDefectDetector(
+                    onnx_path,
+                    confidence_threshold=settings.CONFIDENCE_THRESHOLD,
+                    iou_threshold=settings.IOU_THRESHOLD,
+                )
+                model_type = "onnx_runtime"
+                logger.info("Loaded ONNX model from: %s", onnx_path)
+                return
+            except Exception:
+                logger.exception("Failed to load ONNX model from %s", onnx_path)
 
-            model_engine = YOLO(str(pt_path))
-            model_type = "pytorch_yolo"
-            print(f"Loaded PyTorch YOLO model from: {pt_path}")
-            return
-        except Exception as e:
-            print(f"Failed to load PyTorch model: {e}")
+        pt_path = Path(settings.FALLBACK_PYTORCH_PATH)
+        if pt_path.exists():
+            try:
+                from ultralytics import YOLO
 
-    model_engine = None
-    model_type = "not_initialized"
+                model_engine = YOLO(str(pt_path))
+                model_type = "pytorch_yolo"
+                logger.info("Loaded PyTorch YOLO model from: %s", pt_path)
+                return
+            except Exception:
+                logger.exception("Failed to load PyTorch model from %s", pt_path)
+
+        model_engine = None
+        model_type = "not_initialized"
+        logger.warning("No model available — set MODEL_PATH or FALLBACK_PYTORCH_PATH")
 
 
 
 
 @app.get("/health", response_model=HealthResponse)
-async def health_check() -> HealthResponse:
-    """Returns service health status and model backend information."""
-    return HealthResponse(
-        status="healthy",
+async def health_check() -> Response:
+    """Returns service health: 200 when a model is loaded, 503 otherwise.
+
+    503 on missing model lets Docker HEALTHCHECK / orchestrators mark the
+    container unhealthy instead of routing traffic to a model-less service.
+    """
+    payload = HealthResponse(
+        status="healthy" if model_engine is not None else "unhealthy",
         app_version=settings.APP_VERSION,
         model_loaded=model_engine is not None,
         model_type=model_type,
         classes=settings.CLASS_NAMES,
     )
+    code = status.HTTP_200_OK if model_engine is not None else status.HTTP_503_SERVICE_UNAVAILABLE
+    return JSONResponse(status_code=code, content=payload.model_dump())
 
 
 def run_detection(img_bgr: np.ndarray) -> tuple[List[Dict[str, Any]], Dict[str, float]]:
@@ -125,13 +147,11 @@ def run_detection(img_bgr: np.ndarray) -> tuple[List[Dict[str, Any]], Dict[str, 
         load_model()
 
     if model_engine is None:
-        # Graceful zero-detection response if model not yet trained
-        return [], {
-            "preprocess_ms": 1.0,
-            "inference_ms": 0.0,
-            "postprocess_ms": 0.0,
-            "total_ms": 1.0,
-        }
+        # Model genuinely unavailable: fail loudly instead of inventing results.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="model not loaded",
+        )
 
     if model_type == "onnx_runtime":
         return model_engine.predict(img_bgr)
@@ -156,19 +176,25 @@ def run_detection(img_bgr: np.ndarray) -> tuple[List[Dict[str, Any]], Dict[str, 
             })
 
     latencies = {
-        "preprocess_ms": 2.0,
+        # ultralytics bundles preprocessing and NMS inside predict(), so the
+        # externally-observed cost of those stages is ~0; total is measured.
+        "preprocess_ms": 0.0,
         "inference_ms": (t1 - t0) * 1000.0,
-        "postprocess_ms": 1.0,
-        "total_ms": (t1 - t0) * 1000.0 + 3.0,
+        "postprocess_ms": 0.0,
+        "total_ms": (t1 - t0) * 1000.0,
     }
     return detections, latencies
 
 
 @app.post("/v1/detect", response_model=DetectionResponse)
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
-async def detect_defects(request: Request, file: UploadFile = File(...)) -> DetectionResponse:
-    """Analyzes product image and returns defect bounding boxes and confidence scores."""
-    img_bgr, width, height = await sanitize_and_read_image(file)
+def detect_defects(request: Request, file: UploadFile = File(...)) -> DetectionResponse:
+    """Analyzes product image and returns defect bounding boxes and confidence scores.
+
+    Deliberately a plain (sync) def: Starlette runs sync handlers in its
+    threadpool so inference never blocks the event loop.
+    """
+    img_bgr, width, height = sanitize_and_read_image(file)
     raw_detections, latencies = run_detection(img_bgr)
 
     items = []
@@ -196,34 +222,17 @@ async def detect_defects(request: Request, file: UploadFile = File(...)) -> Dete
 
 @app.post("/v1/detect/annotated")
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
-async def detect_and_annotate(request: Request, file: UploadFile = File(...)) -> Response:
-    """Returns JPEG image with highlighted defect bounding boxes and labels."""
-    img_bgr, _, _ = await sanitize_and_read_image(file)
+def detect_and_annotate(request: Request, file: UploadFile = File(...)) -> Response:
+    """Returns JPEG image with highlighted defect bounding boxes and labels.
+
+    Sync def on purpose: runs in the threadpool, see detect_defects.
+    """
+    img_bgr, _, _ = sanitize_and_read_image(file)
     raw_detections, _ = run_detection(img_bgr)
 
-    annotated = img_bgr.copy()
-    for d in raw_detections:
-        cls_id = d["class_id"]
-        conf = d["confidence"]
-        box = d["box"]
-        x1, y1, x2, y2 = box["x_min"], box["y_min"], box["x_max"], box["y_max"]
-        cls_name = settings.CLASS_NAMES[cls_id] if 0 <= cls_id < len(settings.CLASS_NAMES) else str(cls_id)
-
-        color = CLASS_COLORS.get(cls_id, (0, 255, 0))
-        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-        label = f"{cls_name} {conf:.2f}"
-        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-        cv2.rectangle(annotated, (x1, max(0, y1 - 20)), (x1 + tw + 6, max(0, y1)), color, -1)
-        cv2.putText(
-            annotated,
-            label,
-            (x1 + 3, max(14, y1 - 4)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (0, 0, 0),
-            1,
-            cv2.LINE_AA,
-        )
+    annotated = draw_detections(
+        img_bgr, raw_detections, settings.CLASS_NAMES, settings.CLASS_COLORS
+    )
 
     success, encoded = cv2.imencode(".jpg", annotated)
     if not success:

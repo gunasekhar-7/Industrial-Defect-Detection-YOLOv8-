@@ -1,11 +1,13 @@
-# Industrial Defect Detection Dataset Configuration (YOLO format)
+# Real NEU-DET dataset configuration (YOLO format).
+# Build with: python -m src.data.neu_det   (downloads the official archive
+# from https://faculty.neu.edu.cn/songkc/en/zdylm/263265/ and converts it;
+# for CI / tests use configs/dataset_synthetic.yaml instead).
 path: data/processed
 train: images/train
 val: images/val
 test: images/test
 
-# Classes representing typical surface defects
-# Based on NEU-DET / Industrial metal surface defect standards
+# Six hot-rolled steel surface defect classes (NEU-DET official names)
 names:
   0: crazing
   1: inclusion

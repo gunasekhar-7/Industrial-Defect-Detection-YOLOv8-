@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   api:
     build: .
@@ -10,6 +8,9 @@ services:
     environment:
       - MODEL_PATH=models/industrial_yolov8n.onnx
       - MAX_IMAGE_SIZE_MB=15
+    volumes:
+      # Read-only model mount: swap weights without rebuilding the image.
+      - ./models:/app/models:ro
     restart: unless-stopped
 
   dashboard:
@@ -18,6 +19,12 @@ services:
     command: streamlit run src/ui/dashboard.py --server.port=8501 --server.address=0.0.0.0
     ports:
       - "8501:8501"
+    environment:
+      - MODEL_PATH=models/industrial_yolov8n.onnx
+    volumes:
+      # The dashboard also runs in-process inference for local inspection.
+      - ./models:/app/models:ro
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     restart: unless-stopped
