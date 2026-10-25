@@ -5,11 +5,19 @@
   "imgsz": 320,
   "images": 270,
   "hardware": "Windows-10-10.0.26300-SP0 | Intel64 Family 6 Model 186 Stepping 2, GenuineIntel | python 3.11.7",
-  "timestamp": "2026-10-25T10:11:28+00:00",
+  "timestamp": "2026-10-25T10:44:34+00:00",
   "mAP50": 0.7208593384148835,
   "mAP50_95": 0.4191165798397718,
   "precision": 0.6577969755601648,
   "recall": 0.6982250905072714,
+  "training": {
+    "model": "yolov8n.pt",
+    "epochs": 50,
+    "batch": 16,
+    "imgsz": 320,
+    "device": "cpu",
+    "optimizer": "auto"
+  },
   "per_class": {
     "crazing": {
       "mAP50_95": 0.15460208198193207

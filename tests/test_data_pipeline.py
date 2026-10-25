@@ -4,7 +4,7 @@ import numpy as np
 
 from src.data.generator import create_metallic_background, generate_sample, stamp_scratch
 from src.data.validator import DatasetValidator
-from src.models.evaluate import count_split_images
+from src.models.evaluate import count_split_images, read_training_args
 
 
 def test_metallic_background():
@@ -76,3 +76,26 @@ def test_count_split_images_missing_entry(tmp_path):
     yaml_file.write_text("path: data/processed\ntrain: images/train\n", encoding="utf-8")
     assert count_split_images(yaml_file, "test") == 0
     assert count_split_images(tmp_path / "nope.yaml", "val") == 0
+
+
+def test_read_training_args_from_run_directory(tmp_path):
+    """Executed training config is read from the run's args.yaml next to
+    the weights; a missing file degrades to an empty dict."""
+    weights_dir = tmp_path / "weights"
+    weights_dir.mkdir()
+    (weights_dir.parent / "args.yaml").write_text(
+        "task: detect\nmodel: yolov8n.pt\nepochs: 50\nbatch: 16\n"
+        "imgsz: 320\ndevice: cpu\noptimizer: auto\ntime: null\n",
+        encoding="utf-8",
+    )
+
+    args = read_training_args(weights_dir / "best.pt")
+    assert args["model"] == "yolov8n.pt"
+    assert args["epochs"] == 50
+    assert args["batch"] == 16
+    assert args["imgsz"] == 320
+    assert args["device"] == "cpu"
+    assert "time" not in args  # only the fields we quote are read
+
+    # Different run directory with no args.yaml next to its weights.
+    assert read_training_args(tmp_path / "other_run" / "weights" / "best.pt") == {}
