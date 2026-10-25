@@ -37,5 +37,13 @@ class Settings(BaseSettings):
     }
     RATE_LIMIT_DEFAULT: str = "60/minute"
 
+    # CORS: explicit origins only (override via env ALLOWED_ORIGINS='["..."]').
+    # A wildcard is never allowed and the API uses no cookies/auth, so
+    # credentials are not granted.
+    ALLOWED_ORIGINS: List[str] = [
+        "http://localhost:8501",  # Streamlit dashboard
+        "http://localhost:3000",  # local frontends
+    ]
+
 
 settings = Settings()
