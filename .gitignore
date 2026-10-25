@@ -14,6 +14,8 @@ __pycache__/
 /mlruns/
 *.pt
 *.onnx
+# Shipped model: docker build + fresh clones need this file
+!models/industrial_yolov8n.onnx
 mlflow.db
 .freebuff/
 .superpowers/
