@@ -8,13 +8,15 @@ __pycache__/
 .hypothesis/
 .coverage
 
-# Datasets and training artifacts
-data/
-runs/
+# Datasets and training artifacts (anchored: src/data/ package IS tracked)
+/data/
+/runs/
+/mlruns/
 *.pt
 *.onnx
 mlflow.db
 .freebuff/
+.superpowers/
 
 # Environments
 venv/
