@@ -48,6 +48,40 @@ def count_split_images(data_yaml: str | Path, split: str) -> int:
     )
 
 
+def read_training_args(weights_path: str | Path) -> Dict[str, Any]:
+    """Read the executed training configuration from the run's args.yaml
+    (written by Ultralytics next to the weights) without a YAML library —
+    flat `key: value` lines only.
+
+    Returned next to the metrics so the report states exactly what was
+    trained (epochs, input size, batch, device), not just what was
+    measured. Missing file yields an empty dict instead of failing.
+    """
+    wanted = ("model", "epochs", "batch", "imgsz", "optimizer", "device")
+    args_file = Path(weights_path).parent.parent / "args.yaml"
+    try:
+        lines = args_file.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+    found: Dict[str, Any] = {}
+    for line in lines:
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip()
+        if key not in wanted or key in found:
+            continue
+        value = value.strip()
+        if value in {"null", "None", ""}:
+            found[key] = None
+        else:
+            try:
+                found[key] = int(value)
+            except ValueError:
+                found[key] = value
+    return found
+
+
 def evaluate_model(
     weights_path: str | Path,
     data_yaml: str | Path = "configs/dataset.yaml",
@@ -92,6 +126,7 @@ def evaluate_model(
         "mAP50_95": float(metrics.box.map),
         "precision": float(metrics.box.mp),
         "recall": float(metrics.box.mr),
+        "training": read_training_args(w_path),
         "per_class": {},
     }
 
