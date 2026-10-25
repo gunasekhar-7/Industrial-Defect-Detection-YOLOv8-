@@ -1,0 +1,6 @@
+# Training / evaluation / export dependencies.
+-r requirements.txt
+torch>=2.0.0
+ultralytics>=8.0.0
+onnx>=1.14.0
+mlflow>=2.10.0
