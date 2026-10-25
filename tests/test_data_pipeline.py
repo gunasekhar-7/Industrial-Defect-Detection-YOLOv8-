@@ -33,11 +33,19 @@ def test_generate_sample_bounds():
         assert 0.0 < bh <= 1.0, f"bh out of bounds: {bh}"
 
 
-def test_validator_clean_report():
-    validator = DatasetValidator("data/processed")
+def test_validator_clean_report(tmp_path):
+    """Validator on a freshly generated dataset: unconditional assertions
+    against real files in tmp_path (no vacuous skip when data is absent)."""
+    from src.data.generator import generate_dataset
+
+    generate_dataset(tmp_path, num_train=10, num_val=3, num_test=3)
+
+    validator = DatasetValidator(tmp_path)
     report = validator.validate_split("train")
-    if report.total_images > 0:
-        assert report.total_images == 240
-        assert len(report.corrupted_images) == 0
-        assert len(report.out_of_bounds_boxes) == 0
-        assert len(report.orphaned_labels) == 0
+
+    assert report.total_images == 10
+    assert report.total_labels == 10
+    assert len(report.corrupted_images) == 0
+    assert len(report.out_of_bounds_boxes) == 0
+    assert len(report.orphaned_labels) == 0
+    assert report.images_with_defects + report.clean_images == report.total_images
