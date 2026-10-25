@@ -173,9 +173,13 @@ def run_detection(img_bgr: np.ndarray) -> tuple[List[Dict[str, Any]], Dict[str, 
 
 @app.post("/v1/detect", response_model=DetectionResponse)
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
-async def detect_defects(request: Request, file: UploadFile = File(...)) -> DetectionResponse:
-    """Analyzes product image and returns defect bounding boxes and confidence scores."""
-    img_bgr, width, height = await sanitize_and_read_image(file)
+def detect_defects(request: Request, file: UploadFile = File(...)) -> DetectionResponse:
+    """Analyzes product image and returns defect bounding boxes and confidence scores.
+
+    Deliberately a plain (sync) def: Starlette runs sync handlers in its
+    threadpool so inference never blocks the event loop.
+    """
+    img_bgr, width, height = sanitize_and_read_image(file)
     raw_detections, latencies = run_detection(img_bgr)
 
     items = []
@@ -203,9 +207,12 @@ async def detect_defects(request: Request, file: UploadFile = File(...)) -> Dete
 
 @app.post("/v1/detect/annotated")
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
-async def detect_and_annotate(request: Request, file: UploadFile = File(...)) -> Response:
-    """Returns JPEG image with highlighted defect bounding boxes and labels."""
-    img_bgr, _, _ = await sanitize_and_read_image(file)
+def detect_and_annotate(request: Request, file: UploadFile = File(...)) -> Response:
+    """Returns JPEG image with highlighted defect bounding boxes and labels.
+
+    Sync def on purpose: runs in the threadpool, see detect_defects.
+    """
+    img_bgr, _, _ = sanitize_and_read_image(file)
     raw_detections, _ = run_detection(img_bgr)
 
     annotated = img_bgr.copy()

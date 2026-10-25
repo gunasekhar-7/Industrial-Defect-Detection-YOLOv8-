@@ -29,10 +29,13 @@ def verify_image_magic_bytes(header: bytes) -> str:
     )
 
 
-async def sanitize_and_read_image(file: UploadFile) -> Tuple[np.ndarray, int, int]:
-    """Reads, verifies magic bytes, and validates image dimensions within safe operational bounds."""
-    # Read raw content
-    content = await file.read()
+def sanitize_and_read_image(file: UploadFile) -> Tuple[np.ndarray, int, int]:
+    """Reads, verifies magic bytes, and validates image dimensions within safe operational bounds.
+
+    Synchronous by design: called from sync (threadpool) route handlers.
+    """
+    # Read raw content from the already-spooled upload file
+    content = file.file.read()
     content_length = len(content)
 
     max_bytes = settings.MAX_IMAGE_SIZE_MB * 1024 * 1024

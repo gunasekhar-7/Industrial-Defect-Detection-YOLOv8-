@@ -67,6 +67,26 @@ def test_detect_annotated_503_when_model_missing(client, monkeypatch):
     assert response.json()["detail"] == "model not loaded"
 
 
+def test_detect_handlers_do_not_block_event_loop():
+    """Detect handlers must be sync defs: Starlette runs those in its
+    threadpool, while async handlers would block the event loop for the
+    full ~200ms inference, stalling every other request (e.g. /health)."""
+    import inspect
+
+    from src.api import app as app_module
+
+    paths = {"/v1/detect", "/v1/detect/annotated"}
+    found = set()
+    for route in app_module.app.routes:
+        p = getattr(route, "path", None)
+        if p in paths:
+            found.add(p)
+            assert not inspect.iscoroutinefunction(route.endpoint), (
+                f"{p} is an async handler and blocks the event loop"
+            )
+    assert found == paths, f"missing routes: {paths - found}"
+
+
 def test_detect_valid_image(client):
     img_bytes = create_test_image_bytes("JPEG")
     response = client.post(
