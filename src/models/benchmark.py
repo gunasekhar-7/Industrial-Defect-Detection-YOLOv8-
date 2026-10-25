@@ -115,8 +115,7 @@ class ONNXDefectDetector:
         ]
         indices = cv2.dnn.NMSBoxes(offset_boxes, confidences, self.conf_thresh, self.iou_thresh)
         detections = []
-        if len(indices) > 0:
-            for idx in indices.flatten():
+        for idx in np.asarray(indices, dtype=np.int32).flatten():
                 x, y, w, h = boxes_list[idx]
                 detections.append({
                     "class_id": int(class_ids[idx]),
