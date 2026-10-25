@@ -45,7 +45,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+def _rate_limit_handler(request: Request, exc: Exception) -> Response:
+    """Registry adapter: Starlette types exception handlers as
+    (Request, Exception) while slowapi narrows the second parameter
+    (a contravariance mismatch in its annotations). The registry only
+    dispatches RateLimitExceeded to this key, so delegate directly."""
+    assert isinstance(exc, RateLimitExceeded)
+    return _rate_limit_exceeded_handler(request, exc)
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
 # CORS configuration: explicit origins from settings, never a wildcard.
 app.add_middleware(

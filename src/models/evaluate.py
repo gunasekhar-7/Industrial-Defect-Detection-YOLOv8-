@@ -29,7 +29,7 @@ def evaluate_model(
     )
 
     # Extract aggregate metrics
-    summary = {
+    summary: Dict[str, Any] = {
         "mAP50": float(metrics.box.map50),
         "mAP50_95": float(metrics.box.map),
         "precision": float(metrics.box.mp),
