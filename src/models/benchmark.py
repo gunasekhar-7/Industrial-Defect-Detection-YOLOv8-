@@ -104,7 +104,15 @@ class ONNXDefectDetector:
         if not boxes_list:
             return []
 
-        indices = cv2.dnn.NMSBoxes(boxes_list, confidences, self.conf_thresh, self.iou_thresh)
+        # Per-class NMS via the class-offset trick: shifting x by
+        # class_id * 4096 makes cross-class IoU exactly 0 (max box width
+        # 640 << 4096), so only same-class boxes can suppress each other —
+        # matching Ultralytics' default class-aware behavior.
+        offset_boxes = [
+            [x + class_id * 4096, y, w, h]
+            for (x, y, w, h), class_id in zip(boxes_list, class_ids)
+        ]
+        indices = cv2.dnn.NMSBoxes(offset_boxes, confidences, self.conf_thresh, self.iou_thresh)
         detections = []
         if len(indices) > 0:
             for idx in indices.flatten():
