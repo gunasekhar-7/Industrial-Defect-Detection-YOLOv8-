@@ -1,0 +1,33 @@
+{
+  "model": "best.pt",
+  "data": "configs/dataset.yaml",
+  "split": "val",
+  "imgsz": 320,
+  "images": 270,
+  "hardware": "Windows-10-10.0.26300-SP0 | Intel64 Family 6 Model 186 Stepping 2, GenuineIntel | python 3.11.7",
+  "timestamp": "2026-10-25T10:11:28+00:00",
+  "mAP50": 0.7208593384148835,
+  "mAP50_95": 0.4191165798397718,
+  "precision": 0.6577969755601648,
+  "recall": 0.6982250905072714,
+  "per_class": {
+    "crazing": {
+      "mAP50_95": 0.15460208198193207
+    },
+    "inclusion": {
+      "mAP50_95": 0.39490997930439536
+    },
+    "patches": {
+      "mAP50_95": 0.6480634660172571
+    },
+    "pitted_surface": {
+      "mAP50_95": 0.5266763903671192
+    },
+    "rolled_in_scale": {
+      "mAP50_95": 0.2570232558010965
+    },
+    "scratches": {
+      "mAP50_95": 0.533424305566831
+    }
+  }
+}

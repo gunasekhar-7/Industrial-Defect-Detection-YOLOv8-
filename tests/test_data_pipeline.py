@@ -4,6 +4,7 @@ import numpy as np
 
 from src.data.generator import create_metallic_background, generate_sample, stamp_scratch
 from src.data.validator import DatasetValidator
+from src.models.evaluate import count_split_images
 
 
 def test_metallic_background():
@@ -49,3 +50,29 @@ def test_validator_clean_report(tmp_path):
     assert len(report.out_of_bounds_boxes) == 0
     assert len(report.orphaned_labels) == 0
     assert report.images_with_defects + report.clean_images == report.total_images
+
+
+def test_count_split_images_resolves_path_prefix(tmp_path):
+    """Eval's image count reads `path:` + `split:` from the dataset YAML,
+    counting image files only and reporting 0 for missing directories."""
+    val_dir = tmp_path / "images" / "val"
+    val_dir.mkdir(parents=True)
+    for i in range(3):
+        (val_dir / f"v{i}.jpg").write_bytes(b"x")
+    (val_dir / "notes.txt").write_bytes(b"not an image")
+
+    yaml_file = tmp_path / "dataset.yaml"
+    yaml_file.write_text(
+        f"path: {tmp_path.as_posix()}\ntrain: images/train\nval: images/val\n# val: images/other\n",
+        encoding="utf-8",
+    )
+
+    assert count_split_images(yaml_file, "val") == 3
+    assert count_split_images(yaml_file, "train") == 0  # directory absent
+
+
+def test_count_split_images_missing_entry(tmp_path):
+    yaml_file = tmp_path / "dataset.yaml"
+    yaml_file.write_text("path: data/processed\ntrain: images/train\n", encoding="utf-8")
+    assert count_split_images(yaml_file, "test") == 0
+    assert count_split_images(tmp_path / "nope.yaml", "val") == 0
