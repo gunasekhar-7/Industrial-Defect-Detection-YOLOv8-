@@ -1,7 +1,7 @@
 """API configuration settings and operational constraints."""
 
-from pathlib import Path
 from typing import List, Set
+
 from pydantic_settings import BaseSettings
 
 

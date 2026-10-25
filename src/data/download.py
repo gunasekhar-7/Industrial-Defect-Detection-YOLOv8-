@@ -5,8 +5,8 @@ and provides seamless automated synthetic fallback generation so the pipeline
 is always 100% reproducible out-of-the-box.
 """
 
-import os
 from pathlib import Path
+
 from src.data.generator import generate_dataset
 from src.data.validator import DatasetValidator
 

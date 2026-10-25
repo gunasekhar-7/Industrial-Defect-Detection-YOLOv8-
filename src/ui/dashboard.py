@@ -1,18 +1,15 @@
 """Streamlit real-time industrial defect inspection dashboard."""
 
-import io
-import time
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 import cv2
 import numpy as np
 import pandas as pd
-from PIL import Image
 import streamlit as st
 
 from src.api.config import settings
 from src.models.benchmark import ONNXDefectDetector
-
 
 # Page layout and configuration
 st.set_page_config(

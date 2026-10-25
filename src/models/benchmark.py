@@ -2,7 +2,8 @@
 
 import time
 from pathlib import Path
-from typing import Dict, List, Tuple, Any
+from typing import Any, Dict, List, Tuple
+
 import cv2
 import numpy as np
 import onnxruntime as ort
@@ -83,7 +84,7 @@ class ONNXDefectDetector:
         confidences = []
         class_ids = []
 
-        num_classes = preds.shape[1] - 4
+        # preds rows are [xc, yc, w, h, class scores...]
         for row in preds:
             scores = row[4:]
             class_id = int(np.argmax(scores))

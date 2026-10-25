@@ -1,9 +1,11 @@
 """Integration tests for FastAPI endpoints and security validation boundaries."""
 
 import io
+
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
+
 from src.api.app import app
 
 

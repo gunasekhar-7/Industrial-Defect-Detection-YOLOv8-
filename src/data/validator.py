@@ -3,8 +3,8 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Set, Tuple
+
 import cv2
-import numpy as np
 
 
 @dataclass
