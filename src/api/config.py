@@ -1,6 +1,6 @@
 """API configuration settings and operational constraints."""
 
-from typing import List, Set
+from typing import Dict, List, Set, Tuple
 
 from pydantic_settings import BaseSettings
 
@@ -25,6 +25,17 @@ class Settings(BaseSettings):
         "rolled_in_scale",
         "scratches",
     ]
+
+    # Single source of truth for the defect palette (BGR, OpenCV order).
+    # Both the API's annotated endpoint and the dashboard render from this.
+    CLASS_COLORS: Dict[int, Tuple[int, int, int]] = {
+        0: (0, 0, 255),     # crazing (red)
+        1: (0, 165, 255),   # inclusion (orange)
+        2: (0, 255, 255),   # patches (yellow)
+        3: (255, 0, 255),   # pitted_surface (magenta)
+        4: (255, 255, 0),   # rolled_in_scale (cyan)
+        5: (0, 255, 0),     # scratches (green)
+    }
 
     # Security Boundaries & Validation
     MAX_IMAGE_SIZE_MB: int = 15
