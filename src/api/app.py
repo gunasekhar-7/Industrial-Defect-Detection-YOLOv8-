@@ -25,6 +25,7 @@ from src.api.schemas import (
 )
 from src.api.security import sanitize_and_read_image
 from src.models.benchmark import ONNXDefectDetector
+from src.vision.annotate import draw_detections
 
 logger = logging.getLogger("src.api")
 
@@ -71,16 +72,6 @@ app.add_middleware(
 model_engine: Any = None
 model_type: str = "none"
 _model_lock = threading.Lock()
-
-# Defect class color palette (BGR)
-CLASS_COLORS = {
-    0: (0, 0, 255),     # crazing (red)
-    1: (0, 165, 255),   # inclusion (orange)
-    2: (0, 255, 255),   # patches (yellow)
-    3: (255, 0, 255),   # pitted_surface (magenta)
-    4: (255, 255, 0),   # rolled_in_scale (cyan)
-    5: (0, 255, 0),     # scratches (green)
-}
 
 
 def load_model() -> None:
@@ -239,29 +230,9 @@ def detect_and_annotate(request: Request, file: UploadFile = File(...)) -> Respo
     img_bgr, _, _ = sanitize_and_read_image(file)
     raw_detections, _ = run_detection(img_bgr)
 
-    annotated = img_bgr.copy()
-    for d in raw_detections:
-        cls_id = d["class_id"]
-        conf = d["confidence"]
-        box = d["box"]
-        x1, y1, x2, y2 = box["x_min"], box["y_min"], box["x_max"], box["y_max"]
-        cls_name = settings.CLASS_NAMES[cls_id] if 0 <= cls_id < len(settings.CLASS_NAMES) else str(cls_id)
-
-        color = CLASS_COLORS.get(cls_id, (0, 255, 0))
-        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-        label = f"{cls_name} {conf:.2f}"
-        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-        cv2.rectangle(annotated, (x1, max(0, y1 - 20)), (x1 + tw + 6, max(0, y1)), color, -1)
-        cv2.putText(
-            annotated,
-            label,
-            (x1 + 3, max(14, y1 - 4)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (0, 0, 0),
-            1,
-            cv2.LINE_AA,
-        )
+    annotated = draw_detections(
+        img_bgr, raw_detections, settings.CLASS_NAMES, settings.CLASS_COLORS
+    )
 
     success, encoded = cv2.imencode(".jpg", annotated)
     if not success:
