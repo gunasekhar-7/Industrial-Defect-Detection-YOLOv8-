@@ -50,17 +50,20 @@ def draw_detections(
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, _BOX_THICKNESS)
         label = f"{name} {conf:.2f}"
         (tw, _), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, _LABEL_SCALE, _LABEL_THICKNESS)
+        # Shift the label block left when it would run past the right edge,
+        # otherwise the text is silently clipped mid-word.
+        bg_x1 = max(0, min(x1, annotated.shape[1] - (tw + 6)))
         cv2.rectangle(
             annotated,
-            (x1, max(0, y1 - 20)),
-            (x1 + tw + 6, max(0, y1)),
+            (bg_x1, max(0, y1 - 20)),
+            (bg_x1 + tw + 6, max(0, y1)),
             color,
             -1,
         )
         cv2.putText(
             annotated,
             label,
-            (x1 + 3, max(14, y1 - 4)),
+            (bg_x1 + 3, max(14, y1 - 4)),
             cv2.FONT_HERSHEY_SIMPLEX,
             _LABEL_SCALE,
             (0, 0, 0),
