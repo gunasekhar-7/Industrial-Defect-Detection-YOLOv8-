@@ -1,15 +1,16 @@
 # Runtime dependencies (API + dashboard). No torch/ultralytics here:
 # training-only packages live in requirements-train.txt.
-fastapi>=0.100.0
-uvicorn[standard]>=0.23.0
-pydantic>=2.0.0
-pydantic-settings>=2.0.0
-slowapi>=0.1.9
-python-multipart>=0.0.6
-onnxruntime>=1.16.0
-numpy>=1.24.0
-pillow>=10.0.0
-opencv-python-headless>=4.8.0
-streamlit>=1.30.0
-pandas>=2.0.0
-httpx>=0.24.0
+# Pinned to the versions the test suite was verified against (Task 18).
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+slowapi==0.1.10
+python-multipart==0.0.32
+onnxruntime==1.30.0
+numpy==2.4.6
+pillow==12.3.0
+opencv-python-headless==5.0.0.93
+streamlit==1.65.0
+pandas==3.0.6
+httpx==0.28.1
