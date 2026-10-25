@@ -90,13 +90,23 @@ def sanitize_and_read_image(file: UploadFile) -> Tuple[np.ndarray, int, int]:
     if (
         width > settings.MAX_IMAGE_DIMENSION
         or height > settings.MAX_IMAGE_DIMENSION
-        or width < settings.MIN_IMAGE_DIMENSION
-        or height < settings.MIN_IMAGE_DIMENSION
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 f"Image dimensions ({width}x{height}) exceed permitted limits "
+                f"[{settings.MIN_IMAGE_DIMENSION} - {settings.MAX_IMAGE_DIMENSION} px]."
+            ),
+        )
+
+    if (
+        width < settings.MIN_IMAGE_DIMENSION
+        or height < settings.MIN_IMAGE_DIMENSION
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Image dimensions ({width}x{height}) are below minimum "
                 f"[{settings.MIN_IMAGE_DIMENSION} - {settings.MAX_IMAGE_DIMENSION} px]."
             ),
         )

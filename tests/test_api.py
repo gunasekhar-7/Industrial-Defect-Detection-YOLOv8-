@@ -206,6 +206,32 @@ def test_load_model_is_thread_safe_and_once(client, monkeypatch):
     assert constructions == 1, "load_model re-ran despite model already loaded"
 
 
+def test_dimension_errors_are_honest(client):
+    """Too-small images report 'below minimum'; oversized images keep
+    'exceed permitted limits' — the old code said 'exceed' for both."""
+    # Below minimum (16x16 < MIN_IMAGE_DIMENSION=32)
+    tiny = Image.new("RGB", (16, 16), color=(10, 10, 10))
+    buf = io.BytesIO()
+    tiny.save(buf, format="PNG")
+    r = client.post(
+        "/v1/detect",
+        files={"file": ("tiny.png", buf.getvalue(), "image/png")},
+    )
+    assert r.status_code == 400
+    assert "below minimum" in r.json()["detail"], r.json()["detail"]
+
+    # Over maximum (5000x5000 > MAX_IMAGE_DIMENSION=4096)
+    huge_img = Image.new("RGB", (5000, 5000), color=(100, 100, 100))
+    buf2 = io.BytesIO()
+    huge_img.save(buf2, format="JPEG")
+    r2 = client.post(
+        "/v1/detect",
+        files={"file": ("huge.jpg", buf2.getvalue(), "image/jpeg")},
+    )
+    assert r2.status_code == 400
+    assert "exceed permitted limits" in r2.json()["detail"], r2.json()["detail"]
+
+
 def test_detect_valid_image(client):
     img_bytes = create_test_image_bytes("JPEG")
     response = client.post(
