@@ -143,6 +143,37 @@ def test_detect_rejects_oversized_payload(client):
     assert "exceeds" in response.json()["detail"]
 
 
+def test_cors_configured_origins_only(client):
+    """CORS must echo an explicitly configured origin, never '*', and must
+    not grant CORS to arbitrary origins."""
+    from src.api.config import settings
+
+    assert "*" not in settings.ALLOWED_ORIGINS, "wildcard origin is never allowed"
+
+    allowed = settings.ALLOWED_ORIGINS[0]
+    r = client.options(
+        "/v1/detect",
+        headers={
+            "Origin": allowed,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert r.status_code == 200
+    assert r.headers.get("access-control-allow-origin") == allowed
+
+    r2 = client.options(
+        "/v1/detect",
+        headers={
+            "Origin": "https://evil.example",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+    assert "access-control-allow-origin" not in r2.headers, (
+        "unconfigured origin must get no CORS grant"
+    )
+
+
 def test_detect_valid_image(client):
     img_bytes = create_test_image_bytes("JPEG")
     response = client.post(
