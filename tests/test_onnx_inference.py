@@ -1,8 +1,10 @@
 """Unit tests for ONNX preprocessing, postprocessing, and inference routines."""
 
+import json
+
 import numpy as np
 
-from src.models.benchmark import ONNXDefectDetector
+from src.models.benchmark import ONNXDefectDetector, benchmark_model, build_benchmark_report
 
 
 class MockDetector(ONNXDefectDetector):
@@ -52,6 +54,63 @@ def test_nms_is_per_class():
     detections = detector.postprocess(preds, ratio=1.0, pad=(0, 0), orig_shape=(640, 640))
     classes = sorted(d["class_id"] for d in detections)
     assert classes == [0, 1], f"expected both classes to survive, got {classes}"
+
+
+def test_benchmark_report_has_required_fields(tmp_path):
+    """build_benchmark_report must carry every field the README cites."""
+    stats = {
+        "mean_inference_ms": 1.0,
+        "median_inference_ms": 0.9,
+        "p95_inference_ms": 2.0,
+        "p99_inference_ms": 3.0,
+        "mean_e2e_ms": 4.0,
+        "throughput_fps": 250.0,
+    }
+    report = build_benchmark_report(
+        stats=stats,
+        onnx_path="models/industrial_yolov8n.onnx",
+        provider="CPUExecutionProvider",
+        warmup_runs=50,
+        benchmark_runs=200,
+        model_input=[1, 3, 320, 320],
+    )
+    for key in (
+        "hardware",
+        "provider",
+        "model",
+        "model_input",
+        "warmup_runs",
+        "benchmark_runs",
+        "timestamp",
+        "mean_inference_ms",
+        "median_inference_ms",
+        "p95_inference_ms",
+        "p99_inference_ms",
+        "mean_e2e_ms",
+        "throughput_fps",
+    ):
+        assert key in report, f"missing report field: {key}"
+    assert report["warmup_runs"] == 50
+    assert report["benchmark_runs"] == 200
+    assert report["provider"] == "CPUExecutionProvider"
+    assert report["model"] == "industrial_yolov8n.onnx"
+
+
+def test_benchmark_cli_json_output(tmp_path):
+    """--json path must be written by benchmark_model and parse as JSON."""
+    out = tmp_path / "benchmark.json"
+    benchmark_model(
+        "models/industrial_yolov8n.onnx",
+        warmup_runs=1,
+        benchmark_runs=2,
+        json_path=out,
+    )
+    assert out.exists()
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["warmup_runs"] == 1
+    assert data["benchmark_runs"] == 2
+    assert data["p95_inference_ms"] > 0
+    assert data["throughput_fps"] > 0
 
 
 def test_postprocessing_bounding_boxes():
