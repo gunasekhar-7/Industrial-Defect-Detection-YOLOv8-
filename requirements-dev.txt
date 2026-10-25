@@ -1,6 +1,7 @@
 # Development / CI dependencies.
+# Pinned to the versions the test suite was verified against (Task 18).
 -r requirements.txt
-pytest>=7.4.0
-pytest-cov>=4.1.0
-ruff>=0.4.0
-mypy>=1.10.0
+pytest==9.1.1
+pytest-cov==7.1.0
+ruff==0.16.10
+mypy==2.4.0

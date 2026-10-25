@@ -1,6 +1,9 @@
 # Training / evaluation / export dependencies.
+# Pinned to the versions the training run was verified against (Task 18).
+# Note: ultralytics depends on opencv-python (GUI build); the runtime image
+# never installs this file, so the served container stays headless-only.
 -r requirements.txt
-torch>=2.0.0
-ultralytics>=8.0.0
-onnx>=1.14.0
-mlflow>=2.10.0
+torch==2.14.1
+ultralytics==8.4.185
+onnx==1.23.2
+mlflow==3.17.1
