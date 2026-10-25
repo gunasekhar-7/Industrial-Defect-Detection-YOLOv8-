@@ -33,17 +33,36 @@ def sanitize_and_read_image(file: UploadFile) -> Tuple[np.ndarray, int, int]:
     """Reads, verifies magic bytes, and validates image dimensions within safe operational bounds.
 
     Synchronous by design: called from sync (threadpool) route handlers.
+    The body is consumed in 1 MiB chunks and reading aborts the moment the
+    running total exceeds MAX_IMAGE_SIZE_MB, so an oversized upload is
+    rejected without ever being fully buffered in memory.
     """
-    # Read raw content from the already-spooled upload file
-    content = file.file.read()
-    content_length = len(content)
-
     max_bytes = settings.MAX_IMAGE_SIZE_MB * 1024 * 1024
-    if content_length > max_bytes:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Image size ({content_length / (1024 * 1024):.2f}MB) exceeds {settings.MAX_IMAGE_SIZE_MB}MB limit.",
-        )
+    chunk_size = 1024 * 1024
+
+    chunks = []
+    total = 0
+    header = b""
+    magic_checked = False
+
+    while True:
+        chunk = file.file.read(chunk_size)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"Image size ({total / (1024 * 1024):.2f}MB) exceeds {settings.MAX_IMAGE_SIZE_MB}MB limit.",
+            )
+        if not magic_checked:
+            header += chunk
+            if len(header) >= 16:
+                verify_image_magic_bytes(header[:16])
+                magic_checked = True
+        chunks.append(chunk)
+
+    content_length = total
 
     if content_length < 16:
         raise HTTPException(
@@ -51,8 +70,12 @@ def sanitize_and_read_image(file: UploadFile) -> Tuple[np.ndarray, int, int]:
             detail="File is empty or too small to be a valid image.",
         )
 
-    # Magic byte verification
-    verify_image_magic_bytes(content[:16])
+    # Magic byte verification (deferred if the file was tiny but >= 16 bytes
+    # spread across chunks is impossible; header holds the first 16+ bytes)
+    if not magic_checked:
+        verify_image_magic_bytes(header)
+
+    content = b"".join(chunks)
 
     # Decompression bomb safety check via PIL without loading full pixel buffer into memory
     try:
