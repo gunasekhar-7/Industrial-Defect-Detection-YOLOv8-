@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import Dict, List, Any
 import cv2
 import numpy as np
-from fastapi import FastAPI, File, Request, Response, UploadFile, status
+from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile, status
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -105,15 +106,21 @@ def load_model() -> None:
 
 
 @app.get("/health", response_model=HealthResponse)
-async def health_check() -> HealthResponse:
-    """Returns service health status and model backend information."""
-    return HealthResponse(
-        status="healthy",
+async def health_check() -> Response:
+    """Returns service health: 200 when a model is loaded, 503 otherwise.
+
+    503 on missing model lets Docker HEALTHCHECK / orchestrators mark the
+    container unhealthy instead of routing traffic to a model-less service.
+    """
+    payload = HealthResponse(
+        status="healthy" if model_engine is not None else "unhealthy",
         app_version=settings.APP_VERSION,
         model_loaded=model_engine is not None,
         model_type=model_type,
         classes=settings.CLASS_NAMES,
     )
+    code = status.HTTP_200_OK if model_engine is not None else status.HTTP_503_SERVICE_UNAVAILABLE
+    return JSONResponse(status_code=code, content=payload.model_dump())
 
 
 def run_detection(img_bgr: np.ndarray) -> tuple[List[Dict[str, Any]], Dict[str, float]]:
@@ -125,13 +132,11 @@ def run_detection(img_bgr: np.ndarray) -> tuple[List[Dict[str, Any]], Dict[str, 
         load_model()
 
     if model_engine is None:
-        # Graceful zero-detection response if model not yet trained
-        return [], {
-            "preprocess_ms": 1.0,
-            "inference_ms": 0.0,
-            "postprocess_ms": 0.0,
-            "total_ms": 1.0,
-        }
+        # Model genuinely unavailable: fail loudly instead of inventing results.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="model not loaded",
+        )
 
     if model_type == "onnx_runtime":
         return model_engine.predict(img_bgr)
@@ -156,10 +161,12 @@ def run_detection(img_bgr: np.ndarray) -> tuple[List[Dict[str, Any]], Dict[str, 
             })
 
     latencies = {
-        "preprocess_ms": 2.0,
+        # ultralytics bundles preprocessing and NMS inside predict(), so the
+        # externally-observed cost of those stages is ~0; total is measured.
+        "preprocess_ms": 0.0,
         "inference_ms": (t1 - t0) * 1000.0,
-        "postprocess_ms": 1.0,
-        "total_ms": (t1 - t0) * 1000.0 + 3.0,
+        "postprocess_ms": 0.0,
+        "total_ms": (t1 - t0) * 1000.0,
     }
     return detections, latencies
 
