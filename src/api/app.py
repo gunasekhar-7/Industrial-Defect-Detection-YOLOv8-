@@ -1,6 +1,8 @@
 """FastAPI application for Industrial Defect Detection."""
 
 import io
+import logging
+import threading
 from pathlib import Path
 from typing import Dict, List, Any
 import cv2
@@ -25,6 +27,8 @@ from src.models.benchmark import ONNXDefectDetector
 
 
 from contextlib import asynccontextmanager
+
+logger = logging.getLogger("src.api")
 
 # Rate limiter configuration
 limiter = Limiter(key_func=get_remote_address)
@@ -57,6 +61,7 @@ app.add_middleware(
 # Global model holder
 model_engine: Any = None
 model_type: str = "none"
+_model_lock = threading.Lock()
 
 # Defect class color palette (BGR)
 CLASS_COLORS = {
@@ -70,37 +75,47 @@ CLASS_COLORS = {
 
 
 def load_model() -> None:
-    """Initializes the detection model, favoring ONNX Runtime with PyTorch fallback."""
+    """Initializes the detection model exactly once, thread-safely.
+
+    Favors ONNX Runtime with PyTorch fallback. A failed load leaves the
+    engine unset so a later retry (e.g. model exported after startup)
+    can still succeed.
+    """
     global model_engine, model_type
 
-    onnx_path = Path(settings.MODEL_PATH)
-    if onnx_path.exists():
-        try:
-            model_engine = ONNXDefectDetector(
-                onnx_path,
-                confidence_threshold=settings.CONFIDENCE_THRESHOLD,
-                iou_threshold=settings.IOU_THRESHOLD,
-            )
-            model_type = "onnx_runtime"
-            print(f"Loaded ONNX model from: {onnx_path}")
-            return
-        except Exception as e:
-            print(f"Failed to load ONNX model: {e}")
+    with _model_lock:
+        if model_engine is not None:
+            return  # already loaded — concurrent callers no-op
 
-    pt_path = Path(settings.FALLBACK_PYTORCH_PATH)
-    if pt_path.exists():
-        try:
-            from ultralytics import YOLO
+        onnx_path = Path(settings.MODEL_PATH)
+        if onnx_path.exists():
+            try:
+                model_engine = ONNXDefectDetector(
+                    onnx_path,
+                    confidence_threshold=settings.CONFIDENCE_THRESHOLD,
+                    iou_threshold=settings.IOU_THRESHOLD,
+                )
+                model_type = "onnx_runtime"
+                logger.info("Loaded ONNX model from: %s", onnx_path)
+                return
+            except Exception:
+                logger.exception("Failed to load ONNX model from %s", onnx_path)
 
-            model_engine = YOLO(str(pt_path))
-            model_type = "pytorch_yolo"
-            print(f"Loaded PyTorch YOLO model from: {pt_path}")
-            return
-        except Exception as e:
-            print(f"Failed to load PyTorch model: {e}")
+        pt_path = Path(settings.FALLBACK_PYTORCH_PATH)
+        if pt_path.exists():
+            try:
+                from ultralytics import YOLO
 
-    model_engine = None
-    model_type = "not_initialized"
+                model_engine = YOLO(str(pt_path))
+                model_type = "pytorch_yolo"
+                logger.info("Loaded PyTorch YOLO model from: %s", pt_path)
+                return
+            except Exception:
+                logger.exception("Failed to load PyTorch model from %s", pt_path)
+
+        model_engine = None
+        model_type = "not_initialized"
+        logger.warning("No model available — set MODEL_PATH or FALLBACK_PYTORCH_PATH")
 
 
 

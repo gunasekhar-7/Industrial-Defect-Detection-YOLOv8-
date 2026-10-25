@@ -174,6 +174,38 @@ def test_cors_configured_origins_only(client):
     )
 
 
+def test_load_model_is_thread_safe_and_once(client, monkeypatch):
+    """Concurrent first requests must construct the model session exactly
+    once (lock + already-loaded short-circuit), not once per caller."""
+    import threading
+    import time
+
+    from src.api import app as app_module
+
+    constructions = 0
+
+    class CountingDetector:
+        def __init__(self, *args, **kwargs):
+            nonlocal constructions
+            constructions += 1
+            time.sleep(0.05)  # widen the race window
+
+    monkeypatch.setattr(app_module, "ONNXDefectDetector", CountingDetector)
+    monkeypatch.setattr(app_module, "model_engine", None)
+    monkeypatch.setattr(app_module, "model_type", "none")
+
+    threads = [threading.Thread(target=app_module.load_model) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert constructions == 1, f"model constructed {constructions} times, expected 1"
+    # Second call after load must be a no-op (short-circuit).
+    app_module.load_model()
+    assert constructions == 1, "load_model re-ran despite model already loaded"
+
+
 def test_detect_valid_image(client):
     img_bytes = create_test_image_bytes("JPEG")
     response = client.post(
