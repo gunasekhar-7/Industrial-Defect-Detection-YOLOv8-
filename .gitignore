@@ -24,3 +24,4 @@ mlflow.db
 venv/
 .venv/
 env/
+coverage.xml
