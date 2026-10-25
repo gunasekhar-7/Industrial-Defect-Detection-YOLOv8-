@@ -1,33 +1,49 @@
-# Production Multi-Stage Container for Industrial Defect Detection
-FROM python:3.11-slim as base
+# Multi-stage production image for the Industrial Defect Detection API.
+#
+# Stage 1 (builder): resolve the pinned runtime requirements into a virtualenv.
+# Stage 2 (runtime): slim base, non-root user, only the venv + application.
+# Headless OpenCV removes the need for libgl1/libglib, and the healthcheck is
+# Python-based, so neither curl nor any GUI library ships in the final image.
 
-# Prevent Python from writing .pyc files and buffer stdout/stderr
+FROM python:3.11-slim AS builder
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH" \
     DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# Install system dependencies for OpenCV and network tools
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1 \
-    libglib2.0-0 \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+# Unprivileged user; no libgl1/libglib/curl: opencv is headless and the
+# healthcheck below uses the standard library only.
+RUN useradd --create-home --uid 1000 app
 
-# Install python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application source and configs
+COPY --from=builder /opt/venv /opt/venv
 COPY configs/ ./configs/
 COPY src/ ./src/
 COPY models/ ./models/
 
+USER app
+
 EXPOSE 8000 8501
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+# /health returns 503 when the model is missing; urlopen raises on any
+# non-2xx status, so the container is marked unhealthy without curl.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"
 
-# Default command starts the FastAPI microservice
 CMD ["uvicorn", "src.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
