@@ -10,6 +10,9 @@ select = ["E4", "E7", "E9", "F", "W", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Make `import src...` work for both `pytest` and `python -m pytest`
+# (the console entry point does not put the CWD on sys.path).
+pythonpath = ["."]
 addopts = "--cov=src --cov-report=term-missing"
 
 [tool.mypy]
