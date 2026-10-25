@@ -1,15 +1,16 @@
 """FastAPI application for Industrial Defect Detection."""
 
-import io
 import logging
 import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Any, Dict, List
+
 import cv2
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile, status
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -24,9 +25,6 @@ from src.api.schemas import (
 )
 from src.api.security import sanitize_and_read_image
 from src.models.benchmark import ONNXDefectDetector
-
-
-from contextlib import asynccontextmanager
 
 logger = logging.getLogger("src.api")
 

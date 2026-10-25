@@ -1,7 +1,7 @@
 """ONNX export module with opset and half-precision support."""
 
 from pathlib import Path
-from typing import Any
+
 import onnx
 
 

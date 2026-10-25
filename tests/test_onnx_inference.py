@@ -1,7 +1,7 @@
 """Unit tests for ONNX preprocessing, postprocessing, and inference routines."""
 
-import pytest
 import numpy as np
+
 from src.models.benchmark import ONNXDefectDetector
 
 
@@ -59,7 +59,7 @@ def test_postprocessing_bounding_boxes():
     # Mock YOLOv8 output: [1, 10, 3] (3 anchor predictions: 4 bbox coords + 6 class probabilities)
     # Class 5 (scratch) with high confidence 0.95
     preds = np.zeros((1, 10, 2), dtype=np.float32)
-    
+
     # Box 1: Center (320, 320), width 100, height 50, class 5 conf 0.95
     preds[0, 0, 0] = 320.0
     preds[0, 1, 0] = 320.0

@@ -6,12 +6,12 @@ with strict ground-truth bounding boxes in YOLO format.
 Used for CI pipelines, local testing, and offline benchmarking.
 """
 
-from pathlib import Path
 import random
+from pathlib import Path
 from typing import List, Tuple
+
 import cv2
 import numpy as np
-
 
 CLASS_MAP = {
     0: "crazing",
@@ -31,7 +31,7 @@ def create_metallic_background(width: int = 640, height: int = 640) -> np.ndarra
     # Add directional brushed grain (horizontal streaks)
     grain = np.random.normal(0, random.uniform(8, 16), (height, width // 4)).astype(np.float32)
     grain = cv2.resize(grain, (width, height), interpolation=cv2.INTER_LINEAR)
-    
+
     # Add non-uniform illumination gradient (vignetting / overhead factory lamp)
     y, x = np.ogrid[:height, :width]
     center_x = random.randint(width // 4, 3 * width // 4)
@@ -98,7 +98,7 @@ def stamp_inclusion(img: np.ndarray) -> Tuple[int, int, int, int]:
     cx = random.randint(40, w - 60)
     cy = random.randint(40, h - 60)
     size = random.randint(15, 45)
-    
+
     # Irregular polygon
     num_pts = random.randint(5, 8)
     angles = np.sort(np.random.uniform(0, 2 * np.pi, num_pts))
@@ -110,7 +110,7 @@ def stamp_inclusion(img: np.ndarray) -> Tuple[int, int, int, int]:
 
     val = random.randint(20, 60)
     cv2.fillPoly(img, [poly], (val, val, val))
-    
+
     min_x = max(0, int(np.min(poly[:, 0])) - 4)
     max_x = min(w, int(np.max(poly[:, 0])) + 4)
     min_y = max(0, int(np.min(poly[:, 1])) - 4)

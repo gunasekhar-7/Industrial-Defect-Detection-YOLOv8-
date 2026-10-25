@@ -1,9 +1,9 @@
 """Unit tests for dataset generation, augmentation, and validation."""
 
-import pytest
 import numpy as np
-from src.data.generator import generate_sample, create_metallic_background, stamp_scratch
-from src.data.validator import DatasetValidator, ValidationReport
+
+from src.data.generator import create_metallic_background, generate_sample, stamp_scratch
+from src.data.validator import DatasetValidator
 
 
 def test_metallic_background():

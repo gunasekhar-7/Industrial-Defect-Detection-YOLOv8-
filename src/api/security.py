@@ -2,13 +2,13 @@
 
 import io
 from typing import Tuple
+
 import cv2
 import numpy as np
 from fastapi import HTTPException, UploadFile, status
 from PIL import Image
 
 from src.api.config import settings
-
 
 # Magic byte signatures for image formats
 MAGIC_NUMBERS = {
@@ -25,7 +25,7 @@ def verify_image_magic_bytes(header: bytes) -> str:
             return mime
     raise HTTPException(
         status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-        detail=f"Unsupported file format. Only JPEG, PNG, and BMP are accepted.",
+        detail="Unsupported file format. Only JPEG, PNG, and BMP are accepted.",
     )
 
 
