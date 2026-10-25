@@ -1,8 +1,12 @@
 """Inference engine and micro-benchmarking harness for ONNX Runtime vs PyTorch."""
 
+import json
+import platform
 import time
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Tuple, Any
+from typing import Any, Dict, List, Sequence, Tuple
+
 import cv2
 import numpy as np
 import onnxruntime as ort
@@ -83,7 +87,7 @@ class ONNXDefectDetector:
         confidences = []
         class_ids = []
 
-        num_classes = preds.shape[1] - 4
+        # preds rows are [xc, yc, w, h, class scores...]
         for row in preds:
             scores = row[4:]
             class_id = int(np.argmax(scores))
@@ -104,10 +108,17 @@ class ONNXDefectDetector:
         if not boxes_list:
             return []
 
-        indices = cv2.dnn.NMSBoxes(boxes_list, confidences, self.conf_thresh, self.iou_thresh)
+        # Per-class NMS via the class-offset trick: shifting x by
+        # class_id * 4096 makes cross-class IoU exactly 0 (max box width
+        # 640 << 4096), so only same-class boxes can suppress each other —
+        # matching Ultralytics' default class-aware behavior.
+        offset_boxes = [
+            [x + class_id * 4096, y, w, h]
+            for (x, y, w, h), class_id in zip(boxes_list, class_ids)
+        ]
+        indices = cv2.dnn.NMSBoxes(offset_boxes, confidences, self.conf_thresh, self.iou_thresh)
         detections = []
-        if len(indices) > 0:
-            for idx in indices.flatten():
+        for idx in np.asarray(indices, dtype=np.int32).flatten():
                 x, y, w, h = boxes_list[idx]
                 detections.append({
                     "class_id": int(class_ids[idx]),
@@ -143,11 +154,38 @@ class ONNXDefectDetector:
         return detections, latencies
 
 
+def build_benchmark_report(
+    stats: Dict[str, float],
+    onnx_path: str | Path,
+    provider: str,
+    warmup_runs: int,
+    benchmark_runs: int,
+    model_input: Sequence[Any],
+) -> Dict[str, Any]:
+    """Assemble the benchmark evidence document the README quotes from.
+
+    Hardware, execution provider and run counts travel with the numbers
+    so latency claims stay honest when the machine or runtime changes.
+    """
+    cpu = platform.processor() or platform.machine() or "unknown cpu"
+    return {
+        "model": Path(onnx_path).name,
+        "model_input": list(model_input),
+        "provider": provider,
+        "hardware": f"{platform.platform()} | {cpu} | python {platform.python_version()}",
+        "warmup_runs": warmup_runs,
+        "benchmark_runs": benchmark_runs,
+        "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        **stats,
+    }
+
+
 def benchmark_model(
     onnx_path: str | Path,
     img_size: int = 640,
     warmup_runs: int = 50,
     benchmark_runs: int = 200,
+    json_path: str | Path | None = None,
 ) -> Dict[str, float]:
     """Micro-benchmarks ONNX model measuring mean, median, p95, and p99 latency in ms."""
     detector = ONNXDefectDetector(onnx_path)
@@ -185,6 +223,20 @@ def benchmark_model(
     print(f" Throughput (FPS)              : {stats['throughput_fps']:.1f} FPS")
     print("=" * 65 + "\n")
 
+    if json_path is not None:
+        report = build_benchmark_report(
+            stats=stats,
+            onnx_path=onnx_path,
+            provider=detector.session.get_providers()[0],
+            warmup_runs=warmup_runs,
+            benchmark_runs=benchmark_runs,
+            model_input=detector.session.get_inputs()[0].shape,
+        )
+        out = Path(json_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        print(f"Benchmark report written to: {out}")
+
     return stats
 
 
@@ -195,6 +247,17 @@ if __name__ == "__main__":
     parser.add_argument("--onnx", type=str, required=True, help="Path to .onnx file")
     parser.add_argument("--warmup", type=int, default=50, help="Warmup iterations")
     parser.add_argument("--runs", type=int, default=200, help="Benchmark iterations")
+    parser.add_argument(
+        "--json",
+        type=str,
+        default=None,
+        help="Write the benchmark report (hardware, provider, latency stats) to this JSON path",
+    )
     args = parser.parse_args()
 
-    benchmark_model(args.onnx, warmup_runs=args.warmup, benchmark_runs=args.runs)
+    benchmark_model(
+        args.onnx,
+        warmup_runs=args.warmup,
+        benchmark_runs=args.runs,
+        json_path=args.json,
+    )

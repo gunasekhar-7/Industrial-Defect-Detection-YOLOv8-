@@ -1,18 +1,16 @@
 """Streamlit real-time industrial defect inspection dashboard."""
 
-import io
-import time
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 import cv2
 import numpy as np
 import pandas as pd
-from PIL import Image
 import streamlit as st
 
 from src.api.config import settings
 from src.models.benchmark import ONNXDefectDetector
-
+from src.vision.annotate import draw_detections
 
 # Page layout and configuration
 st.set_page_config(
@@ -77,13 +75,16 @@ iou_thresh = st.sidebar.slider("IoU (NMS) Threshold", 0.1, 1.0, 0.45, 0.05)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Defect Classes")
+# Sidebar swatches derive from the same config palette the renderer uses
+# (BGR -> hex), so legend and boxes can never disagree.
+def _bgr_to_hex(bgr: tuple[int, int, int]) -> str:
+    b, g, r = bgr
+    return f"#{r:02X}{g:02X}{b:02X}"
+
+
 palette = {
-    "crazing": "#EF4444",
-    "inclusion": "#F97316",
-    "patches": "#EAB308",
-    "pitted_surface": "#D946EF",
-    "rolled_in_scale": "#06B6D4",
-    "scratches": "#22C55E",
+    name: _bgr_to_hex(settings.CLASS_COLORS[i])
+    for i, name in enumerate(settings.CLASS_NAMES)
 }
 for name, color in palette.items():
     st.sidebar.markdown(f"<span style='color:{color}; font-weight:600;'>■</span> {name}", unsafe_allow_html=True)
@@ -102,29 +103,8 @@ detector = get_detector(model_file, conf_thresh, iou_thresh)
 
 
 def annotate_image(img_bgr: np.ndarray, detections: List[Dict[str, Any]]) -> np.ndarray:
-    annotated = img_bgr.copy()
-    bgr_palette = {
-        0: (0, 0, 255),
-        1: (0, 165, 255),
-        2: (0, 255, 255),
-        3: (255, 0, 255),
-        4: (255, 255, 0),
-        5: (0, 255, 0),
-    }
-    for d in detections:
-        cls_id = d["class_id"]
-        conf = d["confidence"]
-        box = d["box"]
-        x1, y1, x2, y2 = box["x_min"], box["y_min"], box["x_max"], box["y_max"]
-        cname = settings.CLASS_NAMES[cls_id] if 0 <= cls_id < len(settings.CLASS_NAMES) else str(cls_id)
-        color = bgr_palette.get(cls_id, (0, 255, 0))
-
-        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-        label = f"{cname} {conf:.2f}"
-        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-        cv2.rectangle(annotated, (x1, max(0, y1 - 20)), (x1 + tw + 6, max(0, y1)), color, -1)
-        cv2.putText(annotated, label, (x1 + 3, max(14, y1 - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
-    return annotated
+    """Render detections via the shared annotator (one drawing implementation)."""
+    return draw_detections(img_bgr, detections, settings.CLASS_NAMES, settings.CLASS_COLORS)
 
 
 # Tab 1: Single Part Inspection
