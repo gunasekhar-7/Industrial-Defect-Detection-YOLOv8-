@@ -11,6 +11,7 @@ import streamlit as st
 from src.api.config import settings
 from src.models.benchmark import ONNXDefectDetector
 from src.vision.annotate import draw_detections
+from src.vision.image_io import decode_image
 
 # Page layout and configuration
 st.set_page_config(
@@ -111,8 +112,12 @@ def annotate_image(img_bgr: np.ndarray, detections: List[Dict[str, Any]]) -> np.
 with tab1:
     uploaded_file = st.file_uploader("Upload product surface image", type=["jpg", "jpeg", "png", "bmp"])
     if uploaded_file is not None:
-        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-        img_bgr = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        # Header-first guard: reject >MAX_IMAGE_DIMENSION before any pixel decode.
+        try:
+            img_bgr = decode_image(uploaded_file.read(), settings.MAX_IMAGE_DIMENSION)
+        except ValueError as exc:
+            st.error(str(exc))
+            img_bgr = None
 
         if img_bgr is not None:
             col1, col2 = st.columns(2)
@@ -198,8 +203,12 @@ with tab3:
         batch_results = []
         progress_bar = st.progress(0)
         for i, bf in enumerate(batch_files):
-            fb = np.asarray(bytearray(bf.read()), dtype=np.uint8)
-            img = cv2.imdecode(fb, cv2.IMREAD_COLOR)
+            # Header-first guard: reject >MAX_IMAGE_DIMENSION before any pixel decode.
+            try:
+                img = decode_image(bf.read(), settings.MAX_IMAGE_DIMENSION)
+            except ValueError as exc:
+                st.error(str(exc))
+                img = None
             if img is not None:
                 dets, lats = detector.predict(img)
                 defects_found = [
