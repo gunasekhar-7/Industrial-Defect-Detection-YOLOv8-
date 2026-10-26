@@ -6,9 +6,10 @@ with strict ground-truth bounding boxes in YOLO format.
 Used for CI pipelines, local testing, and offline benchmarking.
 """
 
+import argparse
 import random
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -267,5 +268,20 @@ def generate_dataset(
     print(f"Generated dataset at {root}: train={num_train}, val={num_val}, test={num_test}")
 
 
+def main(argv: Sequence[str] | None = None) -> None:
+    """CLI entry point for the synthetic CI dataset (replaces the old
+    synthetic-dataset entrypoint removed in review item 5). Defaults match
+    the previous entrypoint exactly: 240/50/50 images at data/processed,
+    seed 42."""
+    parser = argparse.ArgumentParser(
+        description="Generate the synthetic industrial defect dataset (CI/tests)"
+    )
+    parser.add_argument(
+        "--out", default="data/processed", help="dataset output root"
+    )
+    args = parser.parse_args(argv)
+    generate_dataset(args.out)
+
+
 if __name__ == "__main__":
-    generate_dataset("data/processed")
+    main()
