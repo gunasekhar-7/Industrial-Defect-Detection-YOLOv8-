@@ -141,3 +141,24 @@ def test_postprocessing_bounding_boxes():
     assert det["confidence"] == 0.95
     assert det["box"]["x_min"] == 270
     assert det["box"]["x_max"] == 370
+
+
+def test_wide_full_width_boxes_of_different_classes_survive_nms():
+    """Class offset must exceed the widest accepted box (review item 2):
+    at 4096 the shifted box overlaps an 11000px full-width box with
+    IoU ~0.457 > 0.45 and wrongly suppresses the other class."""
+    detector = MockDetector()
+    preds = np.zeros((1, 10, 2), dtype=np.float32)
+    for anchor in (0, 1):
+        preds[0, 0, anchor] = 5500.0   # xc
+        preds[0, 1, anchor] = 5500.0   # yc
+        preds[0, 2, anchor] = 11000.0  # w (full width)
+        preds[0, 3, anchor] = 200.0    # h
+    preds[0, 4, 0] = 0.90              # class 0 score
+    preds[0, 5, 1] = 0.80              # class 1 score
+
+    detections = detector.postprocess(
+        preds, ratio=1.0, pad=(0, 0), orig_shape=(11000, 11000)
+    )
+    classes = sorted(d["class_id"] for d in detections)
+    assert classes == [0, 1], f"cross-class suppression returned {classes}"
