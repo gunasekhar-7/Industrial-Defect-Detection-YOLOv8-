@@ -52,7 +52,7 @@ def sanitize_and_read_image(file: UploadFile) -> Tuple[np.ndarray, int, int]:
         total += len(chunk)
         if total > max_bytes:
             raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                 detail=f"Image size ({total / (1024 * 1024):.2f}MB) exceeds {settings.MAX_IMAGE_SIZE_MB}MB limit.",
             )
         if not magic_checked:

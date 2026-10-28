@@ -1,8 +1,9 @@
 """Model training pipeline for YOLOv8 industrial defect detection."""
 
+import argparse
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import torch
 
@@ -61,9 +62,9 @@ def train_model(
     return results
 
 
-if __name__ == "__main__":
-    import argparse
-
+def main(argv: Sequence[str] | None = None) -> Any:
+    """CLI entry point (mirrors src.data.neu_det.main) — kept as a function so
+    tests can pin that every flag, notably --imgsz, is forwarded to train_model."""
     parser = argparse.ArgumentParser(description="Train YOLOv8 on Industrial Defect Dataset")
     parser.add_argument("--model", type=str, default="yolov8n.pt", help="Base model weights")
     parser.add_argument("--data", type=str, default="configs/dataset.yaml", help="Path to data YAML")
@@ -71,9 +72,9 @@ if __name__ == "__main__":
     parser.add_argument("--batch", type=int, default=16, help="Batch size")
     parser.add_argument("--device", type=str, default=None, help="Device to use ('cpu', '0', etc.)")
     parser.add_argument("--imgsz", type=int, default=640, help="Training image size")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    train_model(
+    return train_model(
         model_name=args.model,
         data_yaml=args.data,
         epochs=args.epochs,
@@ -81,3 +82,7 @@ if __name__ == "__main__":
         imgsz=args.imgsz,
         device=args.device,
     )
+
+
+if __name__ == "__main__":
+    main()

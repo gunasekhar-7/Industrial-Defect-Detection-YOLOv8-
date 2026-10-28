@@ -151,7 +151,7 @@ drop a second defect type sitting on top of another — a false pass in
 inspection. `test_nms_is_per_class` pins the behavior.
 
 **CI takes the dataset from where?**
-Nowhere — CI generates the synthetic dataset (`python -m src.data.download`),
+Nowhere — CI generates the synthetic dataset (`python -m src.data.generator`),
 which is why the generator still exists. NEU-DET download is manual/on-demand
 only.
 
