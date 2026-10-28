@@ -50,7 +50,7 @@ jobs:
       # CI dataset is always the synthetic generator; NEU-DET is never
       # downloaded here (it is a manual, licensed fetch — see README).
       - name: Generate synthetic dataset
-        run: python -m src.data.download
+        run: python -m src.data.generator
 
       - name: Run pytest with coverage
         run: pytest tests/ -v --cov-report=xml

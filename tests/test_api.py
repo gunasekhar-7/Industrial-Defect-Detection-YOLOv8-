@@ -291,3 +291,22 @@ def test_security_reject_oversized_dimensions(client):
     )
     assert response.status_code == 400
     assert "exceed permitted limits" in response.json()["detail"]
+
+
+def test_oversize_413_raises_no_deprecation_warning():
+    """Review item 4: the 413 path must use HTTP_413_CONTENT_TOO_LARGE —
+    the deprecated REQUEST_ENTITY name emits StarletteDeprecationWarning."""
+    import warnings
+
+    from fastapi import HTTPException
+
+    from src.api.security import sanitize_and_read_image
+
+    payload = b"\xff\xd8\xff" + b"x" * (16 * 1024 * 1024)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with pytest.raises(HTTPException) as exc:
+            sanitize_and_read_image(_SpyUpload(payload))
+    assert exc.value.status_code == 413
+    stale = [w for w in caught if "HTTP_413_REQUEST_ENTITY_TOO_LARGE" in str(w.message)]
+    assert not stale, "deprecated Starlette status constant still referenced"

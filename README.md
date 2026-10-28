@@ -163,7 +163,7 @@ pip install -r requirements.txt
 **1. Generate the CI dataset and run the tests**
 
 ```bash
-python -m src.data.download        # synthetic dataset, no download needed
+python -m src.data.generator      # synthetic dataset, no download needed
 pytest tests/ -q                   # 38 tests
 ```
 
