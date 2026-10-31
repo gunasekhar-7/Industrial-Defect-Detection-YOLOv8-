@@ -1,10 +1,21 @@
 name: CI Pipeline
 
 on:
+  # Every branch push is linted and tested, not just main — a broken commit on
+  # a feature branch should fail there, not first on its pull request.
   push:
-    branches: [ main, master ]
+    branches: ["**"]
   pull_request:
     branches: [ main, master ]
+  workflow_dispatch:
+
+# A newer push to the same branch or PR supersedes the run in flight.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   lint:
@@ -28,7 +39,7 @@ jobs:
         run: ruff check src tests
 
       - name: Mypy
-        run: mypy src/api src/models
+        run: mypy src
 
   test:
     runs-on: ubuntu-latest
@@ -52,8 +63,10 @@ jobs:
       - name: Generate synthetic dataset
         run: python -m src.data.generator
 
+      # Coverage floor is a regression gate: the suite covers src/ completely,
+      # so any untested production line fails the build instead of drifting.
       - name: Run pytest with coverage
-        run: pytest tests/ -v --cov-report=xml
+        run: pytest tests/ -v --cov-report=xml --cov-fail-under=100
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4

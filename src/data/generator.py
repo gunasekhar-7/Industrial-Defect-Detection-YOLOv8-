@@ -30,7 +30,9 @@ def create_metallic_background(width: int = 640, height: int = 640) -> np.ndarra
     img = np.full((height, width), base_val, dtype=np.uint8)
 
     # Add directional brushed grain (horizontal streaks)
-    grain = np.random.normal(0, random.uniform(8, 16), (height, width // 4)).astype(np.float32)
+    grain: np.ndarray = np.random.normal(
+        0, random.uniform(8, 16), (height, width // 4)
+    ).astype(np.float32)
     grain = cv2.resize(grain, (width, height), interpolation=cv2.INTER_LINEAR)
 
     # Add non-uniform illumination gradient (vignetting / overhead factory lamp)
@@ -201,7 +203,7 @@ STAMP_FUNCS = {
 def generate_sample(width: int = 640, height: int = 640) -> Tuple[np.ndarray, List[Tuple[int, float, float, float, float]]]:
     """Generates an image with 0 to 3 stamped defects and returns YOLO format annotations."""
     img = create_metallic_background(width, height)
-    boxes = []
+    boxes: List[Tuple[int, float, float, float, float]] = []
 
     # 15% clean samples, 85% defective samples
     if random.random() < 0.15:

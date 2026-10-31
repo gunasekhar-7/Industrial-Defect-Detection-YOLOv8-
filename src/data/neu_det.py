@@ -168,14 +168,20 @@ def _fetch_gdrive(target: Path) -> None:
 
 
 def _safe_extract(zf: zipfile.ZipFile, into: Path) -> None:
-    """Extract with a zip-slip guard (members must stay under ``into``)."""
+    """Extract with a zip-slip guard (members must stay under ``into``).
+
+    Containment is checked with ``Path.is_relative_to``, not a string prefix:
+    a sibling directory such as ``NEU-DET-evil/`` shares the prefix of
+    ``NEU-DET/`` but is not inside it, so ``startswith`` would have let it
+    through.
+    """
     root = into.resolve()
     for member in zf.infolist():
         name = member.filename
         if not name:
             continue
         dest = (into / name).resolve()
-        if not str(dest).startswith(str(root)):
+        if not dest.is_relative_to(root):
             raise ValueError(f"unsafe path in archive: {name!r}")
     zf.extractall(into)
 
@@ -262,10 +268,10 @@ def convert_neu_det(
             if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
         )
         xml_index: Dict[str, Path] = {}
-        for xml in scan_root.rglob("*.xml"):
-            if xml.stem in xml_index:
-                raise ValueError(f"duplicate annotation stem: {xml.stem}")
-            xml_index[xml.stem] = xml
+        for annotation in scan_root.rglob("*.xml"):
+            if annotation.stem in xml_index:
+                raise ValueError(f"duplicate annotation stem: {annotation.stem}")
+            xml_index[annotation.stem] = annotation
         if not images:
             raise ValueError(f"no images found under {scan_root}")
         if not xml_index:
@@ -275,7 +281,7 @@ def convert_neu_det(
 
         # ---- Parse everything BEFORE touching out/ (fail fast, no partial writes)
         records = []  # (stem, image_path, stratum_class_id, yolo_lines)
-        missing_xml = []
+        missing_xml: List[str] = []
         for img in images:
             xml = xml_index.get(img.stem)
             if xml is None:

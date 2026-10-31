@@ -13,6 +13,19 @@ import numpy as np
 from PIL import Image
 
 
+def check_upload_size(size_bytes: int, max_bytes: int) -> None:
+    """Reject an upload whose declared size is over ``max_bytes``.
+
+    Checked before the bytes are read so an oversized file never becomes a
+    Python object in the worker, mirroring the API's payload cap.
+    """
+    if size_bytes > max_bytes:
+        raise ValueError(
+            f"file is {size_bytes / (1024 * 1024):.2f}MB, over the "
+            f"{max_bytes / (1024 * 1024):.0f}MB upload limit"
+        )
+
+
 def decode_image(data: bytes, max_dim: int) -> np.ndarray:
     """Decode ``data`` into a BGR image, rejecting anything wider or taller
     than ``max_dim`` before pixel decoding, per review item 3.

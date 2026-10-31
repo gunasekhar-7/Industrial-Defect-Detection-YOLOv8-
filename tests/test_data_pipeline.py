@@ -1,6 +1,7 @@
 """Unit tests for dataset generation, augmentation, and validation."""
 
 import numpy as np
+from PIL import Image
 
 from src.data.generator import create_metallic_background, generate_sample, stamp_scratch
 from src.data.validator import DatasetValidator
@@ -52,6 +53,54 @@ def test_validator_clean_report(tmp_path):
     assert report.images_with_defects + report.clean_images == report.total_images
 
 
+def test_validator_rejects_out_of_range_class_id(tmp_path):
+    images = tmp_path / "images" / "train"
+    labels = tmp_path / "labels" / "train"
+    images.mkdir(parents=True)
+    labels.mkdir(parents=True)
+    Image.new("RGB", (32, 32)).save(images / "sample.jpg")
+    (labels / "sample.txt").write_text("6 0.5 0.5 0.25 0.25\n", encoding="utf-8")
+
+    report = DatasetValidator(tmp_path).validate_split("train")
+
+    assert not report.is_valid
+    assert report.invalid_class_ids == [(str(labels / "sample.txt"), 0, 6)]
+
+
+def test_validator_rejects_boxes_extending_outside_image(tmp_path):
+    images = tmp_path / "images" / "train"
+    labels = tmp_path / "labels" / "train"
+    images.mkdir(parents=True)
+    labels.mkdir(parents=True)
+    Image.new("RGB", (32, 32)).save(images / "sample.jpg")
+    (labels / "sample.txt").write_text("0 0.9 0.5 0.5 0.25\n", encoding="utf-8")
+
+    report = DatasetValidator(tmp_path).validate_split("train")
+
+    assert not report.is_valid
+    assert len(report.out_of_bounds_boxes) == 1
+
+
+def test_validator_allows_missing_labels_for_background_images(tmp_path):
+    images = tmp_path / "images" / "train"
+    images.mkdir(parents=True)
+    Image.new("RGB", (32, 32)).save(images / "clean.jpg")
+
+    report = DatasetValidator(tmp_path).validate_split("train")
+
+    assert report.is_valid
+    assert report.clean_images == 1
+    assert report.missing_labels == [str(images / "clean.jpg")]
+
+
+def test_validator_rejects_empty_or_missing_split(tmp_path):
+    validator = DatasetValidator(tmp_path)
+    (tmp_path / "images" / "empty").mkdir(parents=True)
+
+    assert not validator.validate_split("empty").is_valid
+    assert not validator.validate_split("missing").is_valid
+
+
 def test_count_split_images_resolves_path_prefix(tmp_path):
     """Eval's image count reads `path:` + `split:` from the dataset YAML,
     counting image files only and reporting 0 for missing directories."""
@@ -99,3 +148,46 @@ def test_read_training_args_from_run_directory(tmp_path):
 
     # Different run directory with no args.yaml next to its weights.
     assert read_training_args(tmp_path / "other_run" / "weights" / "best.pt") == {}
+
+
+def test_validator_reports_orphaned_labels_and_corrupt_images(tmp_path):
+    images = tmp_path / "images" / "train"
+    labels = tmp_path / "labels" / "train"
+    images.mkdir(parents=True)
+    labels.mkdir(parents=True)
+    (images / "broken.jpg").write_bytes(b"not a jpeg")
+    (labels / "orphan.txt").write_text("0 0.5 0.5 0.2 0.2\n", encoding="utf-8")
+
+    report = DatasetValidator(tmp_path).validate_split("train")
+
+    assert not report.is_valid
+    assert report.corrupted_images == [str(images / "broken.jpg")]
+    assert report.orphaned_labels == [str(labels / "orphan.txt")]
+
+
+def test_validator_reports_zero_sized_image(tmp_path, monkeypatch):
+    images = tmp_path / "images" / "train"
+    images.mkdir(parents=True)
+    (images / "zero.jpg").write_bytes(b"placeholder")
+    monkeypatch.setattr("src.data.validator.cv2.imread", lambda _path: np.zeros((0, 10, 3), dtype=np.uint8))
+
+    report = DatasetValidator(tmp_path).validate_split("train")
+
+    assert report.corrupted_images == [str(images / "zero.jpg")]
+    assert not report.is_valid
+
+
+def test_validator_reports_malformed_and_non_numeric_labels(tmp_path):
+    images = tmp_path / "images" / "train"
+    labels = tmp_path / "labels" / "train"
+    images.mkdir(parents=True)
+    labels.mkdir(parents=True)
+    Image.new("RGB", (32, 32)).save(images / "badshape.jpg")
+    Image.new("RGB", (32, 32)).save(images / "badnumber.jpg")
+    (labels / "badshape.txt").write_text("0 0.5 0.5 0.2\n", encoding="utf-8")
+    (labels / "badnumber.txt").write_text("x 0.5 0.5 0.2 0.2\n", encoding="utf-8")
+
+    report = DatasetValidator(tmp_path).validate_split("train")
+
+    assert len(report.out_of_bounds_boxes) == 2
+    assert all(entry[2] == [] for entry in report.out_of_bounds_boxes)

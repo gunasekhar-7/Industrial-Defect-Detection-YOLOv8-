@@ -7,6 +7,42 @@ import numpy as np
 from src.models.benchmark import ONNXDefectDetector, benchmark_model, build_benchmark_report
 
 
+def test_detector_disables_ort_spinning_by_default_and_can_opt_in(tmp_path, monkeypatch):
+    """Busy-wait threads made sustained latency swing 20x on a hybrid CPU;
+    the detector must ask ORT not to spin unless explicitly allowed."""
+    from types import SimpleNamespace
+
+    from src.models import benchmark
+
+    model = tmp_path / "detector.onnx"
+    model.write_bytes(b"graph")
+    captured = {}
+
+    class FakeSession:
+        def __init__(self, _path, sess_options, providers):
+            captured["opts"] = sess_options
+            captured["providers"] = providers
+
+        def get_inputs(self):
+            return [SimpleNamespace(name="images", shape=[1, 3, 320, 320])]
+
+        def get_outputs(self):
+            return [SimpleNamespace(name="output0")]
+
+        def get_providers(self):
+            return ["CPUExecutionProvider"]
+
+    monkeypatch.setattr(benchmark.ort, "InferenceSession", FakeSession)
+
+    detector = benchmark.ONNXDefectDetector(model)
+    assert detector.img_h == 320 and detector.img_w == 320
+    spinning = "session.intra_op.allow_spinning"
+    assert captured["opts"].get_session_config_entry(spinning) == "0"
+
+    benchmark.ONNXDefectDetector(model, allow_spinning=True)
+    assert captured["opts"].get_session_config_entry(spinning) == "1"
+
+
 class MockDetector(ONNXDefectDetector):
     """Subclass that skips loading an actual ONNX file for unit testing pure math functions."""
     def __init__(self):
