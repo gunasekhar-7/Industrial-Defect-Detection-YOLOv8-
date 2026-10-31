@@ -151,6 +151,62 @@ def test_download_failure_raises_manual_instructions(tmp_path: Path, monkeypatch
     assert "NEU-DET.zip" in msg, msg
 
 
+def test_zip_slip_member_rejected(tmp_path: Path):
+    """A member escaping the destination is refused before extraction."""
+    from src.data.neu_det import _safe_extract
+
+    archive = tmp_path / "evil.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("../../escaped.txt", "owned")
+
+    into = tmp_path / "NEU-DET"
+    into.mkdir()
+    with zipfile.ZipFile(archive) as zf:
+        with pytest.raises(ValueError, match="unsafe path"):
+            _safe_extract(zf, into)
+
+    assert not (tmp_path.parent / "escaped.txt").exists()
+
+
+def test_zip_slip_sibling_prefix_rejected(tmp_path: Path):
+    """A sibling that shares the destination's *prefix* must be rejected.
+
+    ``NEU-DET-evil/`` is not inside ``NEU-DET/``, but ``str(dest).startswith(
+    str(root))`` said it was — the bypass this guard now closes.
+    """
+    from src.data.neu_det import _safe_extract
+
+    archive = tmp_path / "evil.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("../NEU-DET-evil/pwned.txt", "owned")
+
+    into = tmp_path / "NEU-DET"
+    into.mkdir()
+    with zipfile.ZipFile(archive) as zf:
+        with pytest.raises(ValueError, match="unsafe path"):
+            _safe_extract(zf, into)
+
+    assert not (tmp_path / "NEU-DET-evil" / "pwned.txt").exists()
+
+
+def test_safe_extract_allows_nested_members(tmp_path: Path):
+    """The guard must not reject legitimate nested entries."""
+    from src.data.neu_det import _safe_extract
+
+    archive = tmp_path / "ok.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("NEU-DET/IMAGES/a.jpg", "jpeg")
+        zf.writestr("NEU-DET/ANNOTATIONS/a.xml", "<xml/>")
+
+    into = tmp_path / "out"
+    into.mkdir()
+    with zipfile.ZipFile(archive) as zf:
+        _safe_extract(zf, into)
+
+    assert (into / "NEU-DET" / "IMAGES" / "a.jpg").is_file()
+    assert (into / "NEU-DET" / "ANNOTATIONS" / "a.xml").is_file()
+
+
 def test_download_reuses_existing_archive_without_network(tmp_path: Path, monkeypatch):
     raw = tmp_path / "raw"
     raw.mkdir()

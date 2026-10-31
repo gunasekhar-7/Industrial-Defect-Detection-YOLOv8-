@@ -1,0 +1,28 @@
+{
+  "hardware": "Windows-10-10.0.26300-SP0 | Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+  "timestamp": "2026-10-30T06:45:31+00:00",
+  "frames": 24,
+  "warmup_runs": 10,
+  "benchmark_runs": 50,
+  "models": {
+    "fp32": {
+      "file": "industrial_yolov8n.onnx",
+      "size_mb": 12.65,
+      "mean_ms": 21.58,
+      "median_ms": 19.46,
+      "p95_ms": 36.91
+    },
+    "int8": {
+      "file": "industrial_yolov8n.int8.onnx",
+      "size_mb": 3.36,
+      "mean_ms": 309.84,
+      "median_ms": 291.6,
+      "p95_ms": 417.01
+    }
+  },
+  "detection_agreement": {
+    "frames_compared": 24,
+    "identical_classes": 12
+  },
+  "int8_speedup_median": 0.07
+}

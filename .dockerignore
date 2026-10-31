@@ -1,0 +1,28 @@
+# The image copies only configs/, src/ and models/ (see Dockerfile).
+# Everything else stays out of the build context.
+.git
+.github
+.superpowers
+.pytest_cache
+.mypy_cache
+.ruff_cache
+__pycache__
+*.py[cod]
+.venv
+venv
+env
+data/
+tests/
+docs/
+reports/
+notebooks/
+runs/
+mlruns/
+mlflow.db
+*.db
+coverage.xml
+.coverage
+htmlcov/
+*.log
+.DS_Store
+Thumbs.db

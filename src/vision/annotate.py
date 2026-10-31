@@ -26,13 +26,16 @@ def draw_detections(
     detections: Sequence[Detection],
     class_names: Sequence[str],
     colors: Dict[int, BGR],
+    show_confidence: bool = True,
 ) -> np.ndarray:
     """Return a copy of ``img_bgr`` with a labelled box per detection.
 
     Each detection is a dict with ``class_id`` (int), ``confidence``
     (float) and ``box`` (``x_min``/``y_min``/``x_max``/``y_max``).
     Unknown class ids fall back to ``_FALLBACK_COLOR`` instead of
-    raising, so a mis-indexed model output still renders.
+    raising, so a mis-indexed model output still renders. Set
+    ``show_confidence`` false to label ground truth, which carries no
+    confidence score.
     """
     annotated = img_bgr.copy()
     for d in detections:
@@ -48,7 +51,7 @@ def draw_detections(
         color = colors.get(cls_id, _FALLBACK_COLOR)
 
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, _BOX_THICKNESS)
-        label = f"{name} {conf:.2f}"
+        label = f"{name} {conf:.2f}" if show_confidence else name
         (tw, _), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, _LABEL_SCALE, _LABEL_THICKNESS)
         # Shift the label block left when it would run past the right edge,
         # otherwise the text is silently clipped mid-word.

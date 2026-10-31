@@ -15,6 +15,7 @@ class ValidationReport:
     orphaned_labels: List[str] = field(default_factory=list)
     corrupted_images: List[str] = field(default_factory=list)
     out_of_bounds_boxes: List[Tuple[str, int, List[float]]] = field(default_factory=list)
+    invalid_class_ids: List[Tuple[str, int, int]] = field(default_factory=list)
     class_distribution: Dict[int, int] = field(default_factory=dict)
     images_with_defects: int = 0
     clean_images: int = 0
@@ -22,8 +23,10 @@ class ValidationReport:
     @property
     def is_valid(self) -> bool:
         return (
-            len(self.corrupted_images) == 0
+            self.total_images > 0
+            and len(self.corrupted_images) == 0
             and len(self.out_of_bounds_boxes) == 0
+            and len(self.invalid_class_ids) == 0
             and len(self.orphaned_labels) == 0
         )
 
@@ -49,12 +52,12 @@ class DatasetValidator:
         image_files = {
             f.stem: f
             for f in images_dir.iterdir()
-            if f.suffix.lower() in self.VALID_IMAGE_EXTS
+            if f.is_file() and f.suffix.lower() in self.VALID_IMAGE_EXTS
         }
         label_files = {
             f.stem: f
             for f in labels_dir.iterdir()
-            if f.suffix.lower() == ".txt"
+            if f.is_file() and f.suffix.lower() == ".txt"
         } if labels_dir.exists() else {}
 
         report.total_images = len(image_files)
@@ -81,7 +84,9 @@ class DatasetValidator:
             # Check corresponding label
             lbl_path = label_files.get(stem)
             if not lbl_path or not lbl_path.exists():
-                # Clean product with zero defects
+                # In YOLO datasets, a missing/empty label file denotes a clean
+                # background image; record it without making the split invalid.
+                report.missing_labels.append(str(img_path))
                 report.clean_images += 1
                 continue
 
@@ -106,11 +111,21 @@ class DatasetValidator:
                     report.out_of_bounds_boxes.append((str(lbl_path), line_idx, []))
                     continue
 
-                # Coordinate bounds validation [0, 1]
-                if not (0.0 <= xc <= 1.0 and 0.0 <= yc <= 1.0 and 0.0 < bw <= 1.0 and 0.0 < bh <= 1.0):
+                # Validate both normalized fields and the resulting box bounds.
+                if not (
+                    0.0 <= xc <= 1.0
+                    and 0.0 <= yc <= 1.0
+                    and 0.0 < bw <= 1.0
+                    and 0.0 < bh <= 1.0
+                    and 0.0 <= xc - bw / 2 <= xc + bw / 2 <= 1.0
+                    and 0.0 <= yc - bh / 2 <= yc + bh / 2 <= 1.0
+                ):
                     report.out_of_bounds_boxes.append((str(lbl_path), line_idx, [xc, yc, bw, bh]))
 
-                if 0 <= cls_id < self.num_classes:
-                    report.class_distribution[cls_id] = report.class_distribution.get(cls_id, 0) + 1
+                if not 0 <= cls_id < self.num_classes:
+                    report.invalid_class_ids.append((str(lbl_path), line_idx, cls_id))
+                    continue
+
+                report.class_distribution[cls_id] = report.class_distribution.get(cls_id, 0) + 1
 
         return report

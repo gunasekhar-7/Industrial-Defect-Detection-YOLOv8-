@@ -1,0 +1,70 @@
+{
+  "url": "http://127.0.0.1:8123/v1/detect",
+  "deployment": "single uvicorn worker, 1 CPU, ONNX Runtime CPUExecutionProvider",
+  "note": "API rate limit raised to 100000/minute for the run (one load host, not 60 req/min/IP)",
+  "hardware": "Windows-10-10.0.26300-SP0 | Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+  "timestamp": "2026-10-30T06:45:14+00:00",
+  "image_kb": 21.1,
+  "scaling": [
+    {
+      "concurrency": 1,
+      "requests": 40,
+      "throughput_rps": 14.0,
+      "wall_seconds": 2.85,
+      "ok": 40,
+      "failures": {},
+      "latency_ms": {
+        "mean": 71.2,
+        "p50": 69.1,
+        "p95": 89.5,
+        "p99": 93.2,
+        "max": 93.2
+      }
+    },
+    {
+      "concurrency": 2,
+      "requests": 60,
+      "throughput_rps": 20.8,
+      "wall_seconds": 2.88,
+      "ok": 60,
+      "failures": {},
+      "latency_ms": {
+        "mean": 92.2,
+        "p50": 91.3,
+        "p95": 115.2,
+        "p99": 122.4,
+        "max": 126.7
+      }
+    },
+    {
+      "concurrency": 4,
+      "requests": 120,
+      "throughput_rps": 26.7,
+      "wall_seconds": 4.5,
+      "ok": 120,
+      "failures": {},
+      "latency_ms": {
+        "mean": 148.3,
+        "p50": 135.3,
+        "p95": 247.5,
+        "p99": 269.9,
+        "max": 275.4
+      }
+    },
+    {
+      "concurrency": 8,
+      "requests": 240,
+      "throughput_rps": 25.8,
+      "wall_seconds": 9.3,
+      "ok": 240,
+      "failures": {},
+      "latency_ms": {
+        "mean": 305.8,
+        "p50": 297.8,
+        "p95": 460.6,
+        "p99": 555.7,
+        "max": 568.3
+      }
+    }
+  ]
+}

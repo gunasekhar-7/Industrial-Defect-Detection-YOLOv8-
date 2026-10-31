@@ -11,7 +11,10 @@ import streamlit as st
 from src.api.config import settings
 from src.models.benchmark import ONNXDefectDetector
 from src.vision.annotate import draw_detections
-from src.vision.image_io import decode_image
+from src.vision.image_io import check_upload_size, decode_image
+
+# Same payload budget the API enforces, so both surfaces reject alike.
+MAX_UPLOAD_BYTES = settings.MAX_IMAGE_SIZE_MB * 1024 * 1024
 
 # Page layout and configuration
 st.set_page_config(
@@ -110,27 +113,33 @@ def annotate_image(img_bgr: np.ndarray, detections: List[Dict[str, Any]]) -> np.
 
 # Tab 1: Single Part Inspection
 with tab1:
-    uploaded_file = st.file_uploader("Upload product surface image", type=["jpg", "jpeg", "png", "bmp"])
+    uploaded_file = st.file_uploader(
+        "Upload product surface image",
+        type=["jpg", "jpeg", "png", "bmp"],
+        max_upload_size=settings.MAX_IMAGE_SIZE_MB,
+    )
     if uploaded_file is not None:
-        # Header-first guard: reject >MAX_IMAGE_DIMENSION before any pixel decode.
+        # Byte cap first, then the header-first dimension guard: a rejected
+        # upload never becomes a file buffer or a pixel buffer in the worker.
+        img_bgr: np.ndarray | None = None
         try:
+            check_upload_size(uploaded_file.size, MAX_UPLOAD_BYTES)
             img_bgr = decode_image(uploaded_file.read(), settings.MAX_IMAGE_DIMENSION)
         except ValueError as exc:
             st.error(str(exc))
-            img_bgr = None
 
         if img_bgr is not None:
             col1, col2 = st.columns(2)
             with col1:
                 st.subheader("Raw Surface Image")
-                st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), use_container_width=True)
+                st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), width="stretch")
 
             with col2:
                 st.subheader("Inspection Diagnosis")
                 if detector is not None:
                     detections, latencies = detector.predict(img_bgr)
                     annotated_bgr = annotate_image(img_bgr, detections)
-                    st.image(cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB), use_container_width=True)
+                    st.image(cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB), width="stretch")
 
                     # Quality decision
                     if len(detections) == 0:
@@ -173,22 +182,24 @@ with tab2:
             idx = st.slider("Conveyor Step (Image Index)", 0, len(test_images) - 1, 0)
             target_img_path = test_images[idx]
             sim_img = cv2.imread(str(target_img_path))
+            if sim_img is None:
+                st.error(f"Could not read {target_img_path.name} — the file may be corrupt.")
+            else:
+                c_left, c_right = st.columns(2)
+                with c_left:
+                    st.markdown(f"**Camera Frame:** `{target_img_path.name}`")
+                    st.image(cv2.cvtColor(sim_img, cv2.COLOR_BGR2RGB), width="stretch")
 
-            c_left, c_right = st.columns(2)
-            with c_left:
-                st.markdown(f"**Camera Frame:** `{target_img_path.name}`")
-                st.image(cv2.cvtColor(sim_img, cv2.COLOR_BGR2RGB), use_container_width=True)
-
-            with c_right:
-                if detector is not None:
-                    dets, lats = detector.predict(sim_img)
-                    ann = annotate_image(sim_img, dets)
-                    st.markdown(f"**Inspection Result** ({lats['total_ms']:.1f} ms)")
-                    st.image(cv2.cvtColor(ann, cv2.COLOR_BGR2RGB), use_container_width=True)
-                    if not dets:
-                        st.markdown('<p class="status-pass">STATUS: PASS</p>', unsafe_allow_html=True)
-                    else:
-                        st.markdown(f'<p class="status-fail">STATUS: DEFECTIVE ({len(dets)} defects)</p>', unsafe_allow_html=True)
+                with c_right:
+                    if detector is not None:
+                        dets, lats = detector.predict(sim_img)
+                        ann = annotate_image(sim_img, dets)
+                        st.markdown(f"**Inspection Result** ({lats['total_ms']:.1f} ms)")
+                        st.image(cv2.cvtColor(ann, cv2.COLOR_BGR2RGB), width="stretch")
+                        if not dets:
+                            st.markdown('<p class="status-pass">STATUS: PASS</p>', unsafe_allow_html=True)
+                        else:
+                            st.markdown(f'<p class="status-fail">STATUS: DEFECTIVE ({len(dets)} defects)</p>', unsafe_allow_html=True)
         else:
             st.info("No test images found in data/processed/images/test.")
     else:
@@ -198,17 +209,23 @@ with tab2:
 # Tab 3: Batch Quality Audit
 with tab3:
     st.markdown("Upload multiple product images to generate a certified inspection report.")
-    batch_files = st.file_uploader("Upload batch images", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+    batch_files = st.file_uploader(
+        "Upload batch images",
+        type=["jpg", "jpeg", "png"],
+        accept_multiple_files=True,
+        max_upload_size=settings.MAX_IMAGE_SIZE_MB,
+    )
     if batch_files and detector is not None:
         batch_results = []
         progress_bar = st.progress(0)
         for i, bf in enumerate(batch_files):
-            # Header-first guard: reject >MAX_IMAGE_DIMENSION before any pixel decode.
+            # Byte cap, then header-first dimension guard (same order as tab 1).
+            img: np.ndarray | None = None
             try:
+                check_upload_size(bf.size, MAX_UPLOAD_BYTES)
                 img = decode_image(bf.read(), settings.MAX_IMAGE_DIMENSION)
             except ValueError as exc:
-                st.error(str(exc))
-                img = None
+                st.error(f"{bf.name}: {exc}")
             if img is not None:
                 dets, lats = detector.predict(img)
                 defects_found = [
@@ -228,6 +245,6 @@ with tab3:
 
         if batch_results:
             df = pd.DataFrame(batch_results)
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width="stretch")
             csv = df.to_csv(index=False).encode("utf-8")
             st.download_button("📥 Download Audit Report (CSV)", data=csv, file_name="inspection_audit_report.csv", mime="text/csv")

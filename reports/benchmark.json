@@ -10,11 +10,12 @@
   "hardware": "Windows-10-10.0.26300-SP0 | Intel64 Family 6 Model 186 Stepping 2, GenuineIntel | python 3.11.7",
   "warmup_runs": 50,
   "benchmark_runs": 200,
-  "timestamp": "2026-10-25T10:26:50+00:00",
-  "mean_inference_ms": 8.438234499990358,
-  "median_inference_ms": 8.205399997677887,
-  "p95_inference_ms": 10.63821999450737,
-  "p99_inference_ms": 13.860115002316885,
-  "mean_e2e_ms": 14.051090499888232,
-  "throughput_fps": 71.16885340735328
+  "allow_spinning": false,
+  "timestamp": "2026-10-30T06:43:38+00:00",
+  "mean_inference_ms": 32.77712050017726,
+  "median_inference_ms": 36.0823499977414,
+  "p95_inference_ms": 45.79945500154281,
+  "p99_inference_ms": 59.16023899895661,
+  "mean_e2e_ms": 40.97464500038768,
+  "throughput_fps": 24.40533651946316
 }

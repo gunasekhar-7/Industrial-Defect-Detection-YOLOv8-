@@ -19,5 +19,5 @@ addopts = "--cov=src --cov-report=term-missing"
 python_version = "3.11"
 # Third-party scientific packages without inline types:
 ignore_missing_imports = true
-# Match ruff's scope; src/data and src/ui stay out of the gate for now.
-files = ["src/api", "src/models"]
+# Whole package: ruff already lints src/ and tests/, so the type gate matches.
+files = ["src"]

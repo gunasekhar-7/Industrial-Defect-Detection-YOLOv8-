@@ -12,6 +12,26 @@ import numpy as np
 import onnxruntime as ort
 
 
+def build_session_options(allow_spinning: bool = False) -> ort.SessionOptions:
+    """Session options tuned for sustained single-image inference.
+
+    ORT defaults to a busy-wait intra-op thread pool, which on a hybrid
+    (P-core/E-core) laptop CPU produced wildly unstable latency here:
+    identical inputs measured 12 ms in a short burst and 240 ms once the
+    run continued, because spin-waiting threads compete for the same cores
+    the graph is running on. Disabling spinning gives ~28 ms consistently.
+    A short benchmark that stops while the CPU is still boosting will
+    therefore report a number the service can never hold —
+    ``reports/benchmark.json`` records both regimes.
+    """
+    opts = ort.SessionOptions()
+    opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    opts.add_session_config_entry(
+        "session.intra_op.allow_spinning", "1" if allow_spinning else "0"
+    )
+    return opts
+
+
 class ONNXDefectDetector:
     """Production ONNX Runtime inference engine for industrial defect detection."""
 
@@ -21,6 +41,7 @@ class ONNXDefectDetector:
         confidence_threshold: float = 0.25,
         iou_threshold: float = 0.45,
         providers: List[str] | None = None,
+        allow_spinning: bool = False,
     ):
         self.model_path = Path(onnx_model_path)
         if not self.model_path.exists():
@@ -35,8 +56,7 @@ class ONNXDefectDetector:
             preferred = ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"]
             providers = [p for p in preferred if p in available]
 
-        opts = ort.SessionOptions()
-        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        opts = build_session_options(allow_spinning=allow_spinning)
         self.session = ort.InferenceSession(str(self.model_path), sess_options=opts, providers=providers)
 
         self.input_name = self.session.get_inputs()[0].name
@@ -120,17 +140,17 @@ class ONNXDefectDetector:
         indices = cv2.dnn.NMSBoxes(offset_boxes, confidences, self.conf_thresh, self.iou_thresh)
         detections = []
         for idx in np.asarray(indices, dtype=np.int32).flatten():
-                x, y, w, h = boxes_list[idx]
-                detections.append({
-                    "class_id": int(class_ids[idx]),
-                    "confidence": round(float(confidences[idx]), 4),
-                    "box": {
-                        "x_min": x,
-                        "y_min": y,
-                        "x_max": min(orig_w, x + w),
-                        "y_max": min(orig_h, y + h),
-                    },
-                })
+            x, y, w, h = boxes_list[idx]
+            detections.append({
+                "class_id": int(class_ids[idx]),
+                "confidence": round(float(confidences[idx]), 4),
+                "box": {
+                    "x_min": x,
+                    "y_min": y,
+                    "x_max": min(orig_w, x + w),
+                    "y_max": min(orig_h, y + h),
+                },
+            })
 
         return detections
 
@@ -162,6 +182,7 @@ def build_benchmark_report(
     warmup_runs: int,
     benchmark_runs: int,
     model_input: Sequence[Any],
+    allow_spinning: bool = False,
 ) -> Dict[str, Any]:
     """Assemble the benchmark evidence document the README quotes from.
 
@@ -176,6 +197,7 @@ def build_benchmark_report(
         "hardware": f"{platform.platform()} | {cpu} | python {platform.python_version()}",
         "warmup_runs": warmup_runs,
         "benchmark_runs": benchmark_runs,
+        "allow_spinning": allow_spinning,
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         **stats,
     }
@@ -187,9 +209,10 @@ def benchmark_model(
     warmup_runs: int = 50,
     benchmark_runs: int = 200,
     json_path: str | Path | None = None,
+    allow_spinning: bool = False,
 ) -> Dict[str, float]:
     """Micro-benchmarks ONNX model measuring mean, median, p95, and p99 latency in ms."""
-    detector = ONNXDefectDetector(onnx_path)
+    detector = ONNXDefectDetector(onnx_path, allow_spinning=allow_spinning)
     dummy_img = np.random.randint(0, 255, (img_size, img_size, 3), dtype=np.uint8)
 
     print(f"Warming up ({warmup_runs} iterations)...")
@@ -232,6 +255,7 @@ def benchmark_model(
             warmup_runs=warmup_runs,
             benchmark_runs=benchmark_runs,
             model_input=detector.session.get_inputs()[0].shape,
+            allow_spinning=allow_spinning,
         )
         out = Path(json_path)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -254,6 +278,11 @@ if __name__ == "__main__":
         default=None,
         help="Write the benchmark report (hardware, provider, latency stats) to this JSON path",
     )
+    parser.add_argument(
+        "--allow-spinning",
+        action="store_true",
+        help="Use ORT's default busy-wait thread pool (best-case burst, unstable tail)",
+    )
     args = parser.parse_args()
 
     benchmark_model(
@@ -261,4 +290,5 @@ if __name__ == "__main__":
         warmup_runs=args.warmup,
         benchmark_runs=args.runs,
         json_path=args.json,
+        allow_spinning=args.allow_spinning,
     )

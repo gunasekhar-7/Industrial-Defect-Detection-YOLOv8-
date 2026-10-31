@@ -1,0 +1,21 @@
+{
+  "model": "industrial_yolov8n.onnx",
+  "model_input": [
+    1,
+    3,
+    320,
+    320
+  ],
+  "provider": "CPUExecutionProvider",
+  "hardware": "Windows-10-10.0.26300-SP0 | Intel64 Family 6 Model 186 Stepping 2, GenuineIntel | python 3.11.7",
+  "warmup_runs": 50,
+  "benchmark_runs": 200,
+  "allow_spinning": true,
+  "timestamp": "2026-10-30T06:44:35+00:00",
+  "mean_inference_ms": 199.63757899990014,
+  "median_inference_ms": 244.9850000011793,
+  "p95_inference_ms": 296.0635999956139,
+  "p99_inference_ms": 334.8114479970526,
+  "mean_e2e_ms": 242.00424350015965,
+  "throughput_fps": 4.132158947036564
+}

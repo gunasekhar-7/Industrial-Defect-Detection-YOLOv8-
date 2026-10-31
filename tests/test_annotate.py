@@ -24,6 +24,26 @@ def test_drawing_changes_pixels_at_box_corner() -> None:
     assert tuple(int(v) for v in img[20, 20]) == (0, 0, 0)
 
 
+def test_ground_truth_labels_omit_the_confidence_score(monkeypatch) -> None:
+    """GT boxes carry no score, so the gallery labels them without a
+    fabricated 1.00 that would read as a model prediction."""
+    import src.vision.annotate as mod
+
+    drawn = []
+    real_put_text = mod.cv2.putText
+
+    def spy(img, text, *args, **kwargs):
+        drawn.append(text)
+        return real_put_text(img, text, *args, **kwargs)
+
+    monkeypatch.setattr(mod.cv2, "putText", spy)
+    img = np.zeros((120, 120, 3), dtype=np.uint8)
+    draw_detections(
+        img, [_det(10, 10, 60, 60)], settings.CLASS_NAMES, settings.CLASS_COLORS, show_confidence=False
+    )
+    assert drawn == ["crazing"]
+
+
 def test_empty_detections_returns_untouched_copy() -> None:
     rng = np.random.default_rng(0)
     img = rng.integers(0, 255, (64, 64, 3), dtype=np.uint8)
