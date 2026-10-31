@@ -97,11 +97,11 @@ def evaluate_model(
     the metrics, so every number quoted elsewhere can be traced back to
     the exact run that produced it.
     """
-    from ultralytics import YOLO
-
     w_path = Path(weights_path).resolve()
     if not w_path.exists():
         raise FileNotFoundError(f"Model weights not found at: {w_path}")
+
+    from ultralytics import YOLO
 
     model = YOLO(str(w_path))
     metrics = model.val(

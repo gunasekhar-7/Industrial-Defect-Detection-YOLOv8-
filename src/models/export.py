@@ -14,11 +14,11 @@ def export_to_onnx(
     simplify: bool = True,
 ) -> Path:
     """Exports a trained YOLOv8 model to ONNX format and verifies graph integrity."""
-    from ultralytics import YOLO
-
     w_path = Path(weights_path).resolve()
     if not w_path.exists():
         raise FileNotFoundError(f"Weights file not found at: {w_path}")
+
+    from ultralytics import YOLO
 
     print(f"Exporting {w_path.name} to ONNX (opset={opset}, half={half}, dynamic={dynamic})...")
     model = YOLO(str(w_path))

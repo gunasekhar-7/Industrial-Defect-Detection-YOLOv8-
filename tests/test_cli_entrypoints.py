@@ -25,6 +25,10 @@ def _run_module_as_main(monkeypatch, relative_path: str, *argv: str):
 
 
 def test_export_cli_entry_point_requires_weights(tmp_path, monkeypatch):
+    stub = types.ModuleType("ultralytics")
+    stub.YOLO = lambda _path: None
+    monkeypatch.setitem(sys.modules, "ultralytics", stub)
+
     with pytest.raises(FileNotFoundError, match="Weights file not found"):
         _run_module_as_main(
             monkeypatch,
