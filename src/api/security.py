@@ -7,6 +7,8 @@ import cv2
 import numpy as np
 from fastapi import HTTPException, UploadFile, status
 from PIL import Image
+from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from src.api.config import settings
 
@@ -16,6 +18,102 @@ MAGIC_NUMBERS = {
     b"\x89PNG\r\n\x1a\n": "image/png",
     b"BM": "image/bmp",
 }
+
+# Bytes allowed above the image cap for multipart framing (boundaries, part
+# headers, sibling form fields) before the whole-request limit trips.
+MULTIPART_OVERHEAD_BYTES = 1024 * 1024
+
+
+def body_limit_bytes() -> int:
+    """Whole-request budget: the configured image cap plus multipart overhead."""
+    return settings.MAX_IMAGE_SIZE_MB * 1024 * 1024 + MULTIPART_OVERHEAD_BYTES
+
+
+def _declared_content_length(scope: Scope) -> int | None:
+    """Content-Length from the raw ASGI headers, or None when absent/invalid."""
+    for name, value in scope.get("headers", []):
+        if name.lower() == b"content-length":
+            try:
+                return int(value)
+            except ValueError:
+                return None
+    return None
+
+
+class BodySizeLimitMiddleware:
+    """Reject declared-oversize bodies before Starlette parses the form.
+
+    The streaming cap in :func:`sanitize_and_read_image` bounds memory, but
+    Starlette spools the whole multipart body to a temporary file before the
+    endpoint runs, so bytes still reach disk. Answering 413 from
+    ``Content-Length`` short-circuits that entirely. Bodies without a length
+    (``Transfer-Encoding: chunked``) use the same total-body cap in this
+    middleware before any request bytes reach the form parser.
+    """
+
+    def __init__(self, app: ASGIApp, max_bytes: int | None = None) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope.get("method") not in {"POST", "PUT", "PATCH"}:
+            await self.app(scope, receive, send)
+            return
+
+        limit = self.max_bytes if self.max_bytes is not None else body_limit_bytes()
+        declared = _declared_content_length(scope)
+        if declared is not None and declared > limit:
+            response = JSONResponse(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                content={
+                    "detail": (
+                        f"Request body is {declared} bytes, which exceeds the "
+                        f"{limit}-byte request budget "
+                        f"({settings.MAX_IMAGE_SIZE_MB}MB image cap plus multipart overhead)."
+                    )
+                },
+            )
+            await response(scope, receive, send)
+            return
+
+        total_bytes = 0
+        over_limit = False
+
+        async def limited_receive() -> Message:
+            nonlocal total_bytes, over_limit
+            message = await receive()
+            if message["type"] == "http.request":
+                total_bytes += len(message.get("body", b""))
+                if total_bytes > limit:
+                    # Do not expose any part of this chunk to Starlette's form
+                    # parser, which would otherwise spool it to a temp file.
+                    over_limit = True
+                    return {"type": "http.disconnect"}
+            return message
+
+        async def limited_send(message: Message) -> None:
+            # The downstream app may parse the synthetic terminal request and
+            # send a 400; suppress it so the caller receives the size-limit 413.
+            if not over_limit:
+                await send(message)
+
+        try:
+            await self.app(scope, limited_receive, limited_send)
+        except Exception:
+            if not over_limit:
+                raise
+
+        if over_limit:
+            response = JSONResponse(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                content={
+                    "detail": (
+                        f"Request body exceeds the {limit}-byte request budget "
+                        f"({settings.MAX_IMAGE_SIZE_MB}MB image cap plus multipart overhead)."
+                    )
+                },
+            )
+            await response(scope, receive, send)
 
 
 def verify_image_magic_bytes(header: bytes) -> str:
@@ -70,11 +168,8 @@ def sanitize_and_read_image(file: UploadFile) -> Tuple[np.ndarray, int, int]:
             detail="File is empty or too small to be a valid image.",
         )
 
-    # Magic byte verification (deferred if the file was tiny but >= 16 bytes
-    # spread across chunks is impossible; header holds the first 16+ bytes)
-    if not magic_checked:
-        verify_image_magic_bytes(header)
-
+    # Magic bytes were verified in the loop: `header` accumulates the first
+    # chunk, so reaching 16+ total bytes always means 16+ header bytes.
     content = b"".join(chunks)
 
     # Decompression bomb safety check via PIL without loading full pixel buffer into memory

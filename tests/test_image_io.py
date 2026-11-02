@@ -4,7 +4,7 @@ import io
 import pytest
 from PIL import Image
 
-from src.vision.image_io import decode_image
+from src.vision.image_io import check_upload_size, decode_image
 
 
 def _jpeg(width: int, height: int) -> bytes:
@@ -34,5 +34,26 @@ def test_valid_image_decodes_to_bgr():
 
 
 def test_corrupt_bytes_rejected():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="unreadable image"):
         decode_image(b"\xff\xd8\xffgarbage", 4096)
+
+
+def test_empty_bytes_rejected():
+    with pytest.raises(ValueError, match="empty image data"):
+        decode_image(b"", 4096)
+
+
+def test_decoder_failure_after_valid_header_is_reported(monkeypatch):
+    import src.vision.image_io as mod
+
+    monkeypatch.setattr(mod.cv2, "imdecode", lambda *_args: None)
+    with pytest.raises(ValueError, match="failed to decode image data"):
+        decode_image(_jpeg(24, 24), 4096)
+
+
+def test_upload_size_guard_boundaries():
+    """At the cap is allowed; one byte over is rejected with the limit named."""
+    limit = 1024 * 1024
+    check_upload_size(limit, limit)
+    with pytest.raises(ValueError, match="over the 1MB upload limit"):
+        check_upload_size(limit + 1, limit)

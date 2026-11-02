@@ -23,7 +23,7 @@ from src.api.schemas import (
     HealthResponse,
     LatencyBreakdown,
 )
-from src.api.security import sanitize_and_read_image
+from src.api.security import BodySizeLimitMiddleware, sanitize_and_read_image
 from src.models.benchmark import ONNXDefectDetector
 from src.vision.annotate import draw_detections
 
@@ -46,6 +46,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.state.limiter = limiter
+
+# Whole-request size gate: answers 413 from Content-Length before Starlette
+# spools the multipart body to disk. Registered before CORS so CORS ends up
+# outermost and a rejected upload still carries the CORS headers.
+app.add_middleware(BodySizeLimitMiddleware)
 
 
 def _rate_limit_handler(request: Request, exc: Exception) -> Response:

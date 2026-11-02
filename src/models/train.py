@@ -5,8 +5,6 @@ import os
 from pathlib import Path
 from typing import Any, Sequence
 
-import torch
-
 
 def train_model(
     model_name: str = "yolov8n.pt",
@@ -24,11 +22,15 @@ def train_model(
     (see ``ultralytics.cfg.get_save_dir``), so ``project=""`` yields the
     canonical ``runs/detect/<name>`` layout that evaluate/export defaults use.
     """
-    from ultralytics import YOLO
-
     data_path = Path(data_yaml).resolve()
     if not data_path.exists():
         raise FileNotFoundError(f"Dataset config not found at: {data_path}")
+
+    # Heavy ML imports are function-local (matching evaluate/export/app) so
+    # importing this module — or running its CLI `--help` — does not need the
+    # training stack installed; only an actual training call does.
+    import torch
+    from ultralytics import YOLO
 
     # Determine compute device
     if device is None:

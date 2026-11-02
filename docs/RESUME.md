@@ -22,25 +22,34 @@ put on paper; the exact strings live in the cited artifact.
 
 ### 2. Performance — CPU inference budget
 
-> **S:** The serving path had to meet a real-time inspection budget on CPU
-> with no GPU available. **A:** Exported to ONNX (opset 17, graph-checked),
-> letterbox-preprocessed in OpenCV, per-class NMS, and wrote a reproducible
-> benchmark harness that records hardware, provider and run counts with the
-> numbers. **R:** **p95 10.64 ms** inference, **14.05 ms** end-to-end with
-> NMS, **71.2 FPS** throughput (median 8.21 ms) on `CPUExecutionProvider`,
-> 200 runs after 50 warmups — [`reports/benchmark.json`](../reports/benchmark.json).
+> **S:** The serving path had to meet an inspection budget on CPU with no
+> GPU available, and an early `8.2 ms median` claim did not survive a longer
+> run. **A:** Exported to ONNX (opset 17, graph-checked), letterbox-
+> preprocessed in OpenCV, per-class NMS, then built a benchmark harness that
+> records hardware, provider, run counts and session options with the
+> numbers — which exposed ONNX Runtime's busy-wait thread pool as the cause:
+> on a hybrid P-core/E-core CPU the same 200-run protocol measured 12 ms at
+> the start and 245 ms sustained. Disabling `session.intra_op.allow_spinning`
+> made latency stable, then a concurrent HTTP load harness measured the
+> deployed service. **R:** **p50 36.08 ms / p95 45.80 ms** inference,
+> **40.97 ms** end-to-end with NMS, **24.4 FPS** sustained; the service serves
+> **~27 req/s at 4+ concurrent clients** with every request at HTTP 200 —
+> [`reports/benchmark.json`](../reports/benchmark.json),
+> [`reports/benchmark_spinning.json`](../reports/benchmark_spinning.json),
+> [`reports/loadtest.json`](../reports/loadtest.json).
 
 ### 3. API security — hardened input path with adversarial tests
 
 > **S:** An image-upload inference API is a DoS and spoofing surface.
 > **A:** Implemented magic-byte content sniffing (415), decompression-bomb
 > dimension checks read from the header *before* allocation (400), a 15 MB
-> payload cap enforced **while streaming** so oversized bodies abort early
-> (413), per-IP rate limiting at 60 req/min (429), explicit CORS origins
-> (never `*`), and thread-safe one-shot model loading. **R:** Each guard has
-> an adversarial test — the suite is **38 tests**, including a spy that
-> asserts bytes-read stay bounded and a check that handlers never block the
-> event loop — [`tests/test_api.py`](../tests/test_api.py),
+> payload cap checked from `Content-Length` before the form is parsed and
+> enforced **while streaming** (413), per-IP rate limiting at 60 req/min
+> (429), explicit CORS origins (never `*`), and thread-safe one-shot model
+> loading. **R:** Each guard has an adversarial test — the suite is **122
+> tests**, including a spy that asserts bytes-read stay bounded, a check that
+> an oversize body never reaches the app, and a check that handlers never
+> block the event loop — [`tests/test_api.py`](../tests/test_api.py),
 > [`src/api/security.py`](../src/api/security.py).
 
 ### 4. MLOps — reproducible pipeline from clone to container
@@ -72,8 +81,8 @@ put on paper; the exact strings live in the cited artifact.
 > **S:** Box-annotation logic was duplicated between the API and the
 > dashboard and could drift. **A:** Extracted `draw_detections()` into
 > `src/vision/annotate.py` with the class palette moved to config as the
-> single source of truth, added a mypy gate over `src/api`, `src/models` and
-> `src/vision`, and fixed every finding without suppressions. **R:**
+> single source of truth, added a mypy gate over the whole `src` package,
+> and fixed every finding without suppressions. **R:**
 > `grep cv2.rectangle src/` shows one *detection-annotation* site (the other
 > hit is the synthetic-data generator stamping defect patches), the sidebar
 > legend is
@@ -88,13 +97,16 @@ put on paper; the exact strings live in the cited artifact.
 "I built an end-to-end defect-detection service for steel surfaces: YOLOv8n
 fine-tuned on the public NEU-DET dataset — mAP@50 of 0.72 on the held-out
 split, and I publish the weak classes rather than hiding them. It serves
-through ONNX Runtime at a p95 of about 10.6 ms per image on CPU, behind a
+through ONNX Runtime at 36 ms median / 46 ms p95 per image on CPU, about 27
+requests per second from a single worker under concurrent HTTP load, behind a
 FastAPI layer that treats every upload as hostile: magic-byte checks,
 decompression-bomb limits, a streaming payload cap and rate limiting, each
-with an adversarial test — 38 tests total, gated by ruff, mypy and a
-three-job CI pipeline, packaged in a non-root multi-stage Docker image. Every
-number in the README traces to a committed JSON artifact, because in ML work
-the provenance *is* the credibility."
+with an adversarial test — 122 tests at 100% statement coverage, gated by
+ruff, mypy and a three-job CI pipeline, packaged in a non-root multi-stage
+Docker image. When my first latency number didn't hold up under a longer run
+I chased it to ORT's busy-wait thread pool, fixed it and published both
+measurements — every number traces to a committed JSON artifact, because in
+ML work the provenance *is* the credibility."
 
 ---
 
@@ -155,10 +167,27 @@ Nowhere — CI generates the synthetic dataset (`python -m src.data.generator`),
 which is why the generator still exists. NEU-DET download is manual/on-demand
 only.
 
+**You published two very different latency numbers. Which is real?**
+Both, and the difference is the story: ORT's busy-wait thread pool made the
+same 200-run protocol report 12 ms early and 245 ms once sustained (the
+numbers swing because spin-waiting threads compete with the graph on a hybrid
+CPU). Disabling spinning gives a stable 36 ms median / 46 ms p95, which is
+what the service actually holds and what the load test confirms (14 req/s at
+one client, p50 69 ms including HTTP). The 8 ms figure is gone from the
+README rather than quietly kept.
+
+**Why not ship INT8?**
+Measured, not assumed: dynamic INT8 is 3.8× smaller but 15× slower and changes
+predicted classes on 12 of 24 frames here, because ORT dequantizes Conv
+weights back to FP32 before each convolution. The script and the JSON are
+committed so the decision can be re-checked; static QDQ with calibration is
+the next attempt, not a claim.
+
 **What would you do next?**
 Longer/GPU training with MLflow run comparison (crazing is the bottleneck),
-FP16/quantization measured rather than claimed, routing the dashboard
-through the API with auth, and a load test of the rate-limit path.
+a 3-seed mean ± std on the validation split, static QDQ INT8, routing the
+dashboard through the API with auth, and a `/metrics` endpoint so the
+load-test percentiles can be watched in production.
 
 ---
 
@@ -171,6 +200,15 @@ python -m src.models.evaluate \
 
 python -m src.models.benchmark --onnx models/industrial_yolov8n.onnx \
   --warmup 50 --runs 200 --json reports/benchmark.json
+python -m src.models.benchmark --onnx models/industrial_yolov8n.onnx \
+  --warmup 50 --runs 200 --allow-spinning --json reports/benchmark_spinning.json
+python -m src.models.quantize --onnx models/industrial_yolov8n.onnx \
+  --compare data/processed/images/val   # -> reports/quantization_tradeoff.json
+python scripts/make_gallery.py          # -> docs/failure_gallery.png
 
-ruff check src tests && mypy src/api src/models src/vision && pytest tests/ -q
+# service-level throughput (needs the API running with the rate limit raised)
+python scripts/loadtest.py --image data/processed/images/val/crazing_109.jpg \
+  --concurrency 8 --requests 240 --json reports/loadtest.json
+
+ruff check src tests && mypy src && pytest tests/ -q
 ```
